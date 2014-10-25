@@ -8,38 +8,6 @@ use mailcheck::MessageParser;
 use std::io::{BufferedReader, BufferedWriter, File, Truncate, Write};
 
 
-fn msg_file(index: int) -> File {
-    let path = Path::new(format!("msgs/msg{}", index));
-    match File::open_mode(&path, Truncate, Write) {
-        Ok(file) => file,
-        Err(e) => fail!("Error opening message file: {} ({})", path.as_str(), e)
-    }
-}
-
-fn split_mbox() {
-    let file = File::open(&Path::new("Takeout/Mail/All mail Including Spam and Trash.mbox"));
-    let mut reader = BufferedReader::new(file);
-
-    let mut i = 0;
-    let mut out = BufferedWriter::new(msg_file(i));
-    let from_re = regex!(r"^From .*");
-
-    for line in reader.lines() {
-        match line {
-            Ok(l) => if from_re.is_match(l.as_slice()) {
-                    i = i+1;
-                    out = BufferedWriter::new(msg_file(i));
-                }
-                else {
-                    out.write_str(l.as_slice());
-                },
-            _ => fail!("Error reading mbox")
-        }
-
-    }
-
-}
-
 fn parse_msg() {
     let file = File::open(&Path::new("msgs/msg2"));
 
