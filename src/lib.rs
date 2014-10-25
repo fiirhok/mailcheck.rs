@@ -40,8 +40,8 @@ impl<'a,'b> MessageParser<'a,'b> {
 
     fn parse_header_name(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
 
-        match byte as char {
-            ':' => match String::from_utf8(self.buf.clone()) {
+        match byte {
+            b':' => match String::from_utf8(self.buf.clone()) {
                     Ok(name) => { self.buf.clear(); (ParseHeaderValue, HeaderName(name)) },
                     Err(_) => (ParseStateError, ParseError)
                 },
@@ -50,41 +50,38 @@ impl<'a,'b> MessageParser<'a,'b> {
     }
 
     fn parse_header_value(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
-        match byte as char {
-            ' ' if self.buf.len() == 0 => (ParseHeaderValue, NonEvent),
-            '\r' => (ParseEndOfHeader, NonEvent),
-            '\n' => (ParseStartHeaderLine, NonEvent),
+        match byte {
+            b' ' if self.buf.len() == 0 => (ParseHeaderValue, NonEvent),
+            b'\r' => (ParseEndOfHeader, NonEvent),
+            b'\n' => (ParseStartHeaderLine, NonEvent),
             _ => { self.buf.push(byte); (ParseHeaderValue, NonEvent) }
 
         }
     }
 
     fn parse_end_of_header(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
-        match byte as char {
-            '\n' => (ParseStartHeaderLine, NonEvent),
+        match byte {
+            b'\n' => (ParseStartHeaderLine, NonEvent),
             _ => (ParseStateError, ParseError)
         }
     }
 
     fn parse_start_header_line(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
-        match byte as char {
-
-            '\r' => {
+        match byte {
+            b'\r' => {
                 match String::from_utf8(self.buf.clone()) {
                     Ok(value) => { self.buf.clear(); (ParseEndOfHeaderSection, HeaderValue(value)) },
                     Err(_) => (ParseStateError, ParseError)
                 }
             }
-            '\n' => {
+            b'\n' => {
                 match String::from_utf8(self.buf.clone()) {
                     Ok(value) => { self.buf.clear(); (PendingEvents(box ParseBody, EndOfHeaders), HeaderValue(value)) },
                     Err(_) => (ParseStateError, ParseError)
                 }
             }
-            x if is_whitespace(x) => {
-                if self.buf.last() != Some(&b' ') {
-                    self.buf.push(b' ')
-                }
+            x if is_whitespace(x as char) => {
+                self.buf.push(x);
                 (ParseHeaderValue, NonEvent)
             },
             _ => match String::from_utf8(self.buf.clone()) {
@@ -99,8 +96,8 @@ impl<'a,'b> MessageParser<'a,'b> {
     }
 
     fn parse_end_of_header_section(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
-        match byte as char {
-            '\n' => (ParseBody, EndOfHeaders),
+        match byte {
+            b'\n' => (ParseBody, EndOfHeaders),
             _ => (ParseStateError, ParseError)
         }
     }
@@ -186,7 +183,7 @@ fn parser_test() {
 
     assert_eq!(vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
                HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
-               BodyChunk(vec![66, 111, 100, 121])], events);
+               EndOfHeaders, BodyChunk(vec![66, 111, 100, 121])], events);
 }
 
 #[test]
@@ -194,14 +191,15 @@ fn multiline_header_test() {
 
     use std::io::MemReader;
 
-    let s = "Header1: Line1\r\n\tLine2\r\n\r\nBody".to_string();
+    let s = "Header1: Line1\r\n\t  Line2\r\n\r\nBody".to_string();
 
     let r = &mut MemReader::new(s.as_bytes().to_vec());
 
     let mut parser = MessageParser::new(r);
 
     let expected_events = [HeaderName("Header1".to_string()), 
-        HeaderValue("Line1 Line2".to_string()), 
+        HeaderValue("Line1\t  Line2".to_string()), 
+        EndOfHeaders,
         BodyChunk(vec![66, 111, 100, 121])];
 
     for (expected, actual) in expected_events.iter().zip(parser) {

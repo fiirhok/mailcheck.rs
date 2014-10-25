@@ -41,7 +41,7 @@ fn split_mbox() {
 }
 
 fn parse_msg() {
-    let file = File::open(&Path::new("Takeout/Mail/msgs/msg.000"));
+    let file = File::open(&Path::new("msgs/msg2"));
 
     let mut reader = BufferedReader::new(file);
 
@@ -57,6 +57,6 @@ fn parse_msg() {
 
 #[cfg(not(test))]
 fn main() {
-    split_mbox();
+    parse_msg();
 }
 
