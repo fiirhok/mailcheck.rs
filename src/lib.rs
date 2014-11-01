@@ -2,7 +2,7 @@ use std::vec::Vec;
 use std::io::EndOfFile;
 use std::char::is_whitespace;
 
-pub struct MessageParser<'a, 'b> {
+pub struct MessageScanner<'a, 'b> {
     reader: &'a mut Reader + 'a,
     state: ParserState<'b>,
     buf: Vec<u8>,
@@ -32,10 +32,10 @@ enum ParserState<'a> {
     PendingEvents(Box<ParserState<'a>>, MessageParserEvent)
 }
 
-impl<'a,'b> MessageParser<'a,'b> {
-    pub fn new(reader: &'a mut Reader) -> MessageParser {
+impl<'a,'b> MessageScanner<'a,'b> {
+    pub fn new(reader: &'a mut Reader) -> MessageScanner {
         let buf: Vec<u8> = Vec::new();
-        MessageParser { reader: reader, state: ParseHeaderName, buf: buf }
+        MessageScanner{ reader: reader, state: ParseHeaderName, buf: buf }
     }
 
     fn parse_header_name(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
@@ -148,7 +148,7 @@ impl<'a,'b> MessageParser<'a,'b> {
     }
 }
 
-impl<'a,'b> Iterator<MessageParserEvent> for MessageParser<'a,'b> {
+impl<'a,'b> Iterator<MessageParserEvent> for MessageScanner<'a,'b> {
 
     fn next(&mut self) -> Option<MessageParserEvent> {
         loop {
@@ -177,7 +177,7 @@ fn parser_test() {
 
     let r = &mut MemReader::new(s.as_bytes().to_vec());
 
-    let mut parser = MessageParser::new(r);
+    let mut parser = MessageScanner::new(r);
 
     let events = parser.collect();
 
@@ -195,7 +195,7 @@ fn multiline_header_test() {
 
     let r = &mut MemReader::new(s.as_bytes().to_vec());
 
-    let mut parser = MessageParser::new(r);
+    let parser = MessageScanner::new(r);
 
     let expected_events = [HeaderName("Header1".to_string()), 
         HeaderValue("Line1\t  Line2".to_string()), 
