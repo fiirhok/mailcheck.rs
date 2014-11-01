@@ -25,17 +25,17 @@ fn parse_msg(path: &Path) -> u32 {
 #[cfg(not(test))]
 fn main() {
 
-    let dir = Path::new("msgs");
+    let dir = Path::new("/Users/smckay/projects/rust/mailcheck/msgs");
 
-    let mut msg_count: u32 = 0;
 
     match fs::readdir(&dir) {
         Ok(msgs) => {
-            let events = msgs.iter().map(|msg| {
+            let mut events : Vec<Future<u32>> = msgs.iter().map(|msg| {
                 let path = msg.clone();
                 Future::spawn(proc() { parse_msg(&path) })
-            });
-            let event_count = events.map(|e| e.unwrap()).fold(0, |sum, x| sum + x);
+            }).collect();
+            let msg_count = events.len();
+            let event_count = events.iter_mut().map(|e| e.get()).fold(0, |sum, x| sum + x);
             println!("{} events", event_count);
             println!("{} messages", msg_count);
         },
