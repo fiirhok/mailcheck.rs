@@ -1,17 +1,17 @@
 extern crate mailcheck;
 
-use mailcheck::MessageScanner;
-use std::io::{BufferedReader, File, fs};
-use std::sync::Future;
 
 
 #[cfg(not(test))]
 fn parse_msg(path: &Path) -> u32 {
+    use std::io::{BufferedReader, File};
+    use mailcheck::MessageScanner;
+
     let file = File::open(path);
 
-    let mut reader = BufferedReader::new(file);
+    let reader = BufferedReader::new(file);
 
-    let mut parser = MessageScanner::new(&mut reader);
+    let mut parser = MessageScanner::new(reader);
 
     let mut event_count = 0;
 
@@ -24,9 +24,10 @@ fn parse_msg(path: &Path) -> u32 {
 
 #[cfg(not(test))]
 fn main() {
+    use std::sync::Future;
+    use std::io::fs;
 
     let dir = Path::new("/Users/smckay/projects/rust/mailcheck/msgs");
-
 
     match fs::readdir(&dir) {
         Ok(msgs) => {

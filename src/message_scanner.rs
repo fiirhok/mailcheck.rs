@@ -5,15 +5,15 @@ use std::char::is_whitespace;
 use events::{MessageParserEvent, HeaderName, HeaderValue, EndOfHeaders, 
     BodyChunk, ParseError, NonEvent, End};
 
-pub struct MessageScanner<'a, 'b> {
-    reader: &'a mut Reader + 'a,
-    state: ParserState<'b>,
+pub struct MessageScanner<R: Reader> {
+    reader: R,
+    state: ParserState,
     buf: Vec<u8>,
     chunk_size: uint
 }
 
 #[deriving(Clone)]
-enum ParserState<'a> {
+enum ParserState {
     ParseHeaderName,
     ParseHeaderValue,
     ParseEndOfHeader,
@@ -22,11 +22,11 @@ enum ParserState<'a> {
     ParseBody, 
     ParseFinished,
     ParseStateError,
-    PendingEvents(Box<ParserState<'a>>, MessageParserEvent)
+    PendingEvents(Box<ParserState>, MessageParserEvent)
 }
 
-impl<'a,'b> MessageScanner<'a,'b> {
-    pub fn new(reader: &'a mut Reader) -> MessageScanner {
+impl<R: Reader> MessageScanner<R> {
+    pub fn new(reader: R) -> MessageScanner<R> {
         let chunk_size = 2048;
         let buf: Vec<u8> = Vec::with_capacity(chunk_size);
         MessageScanner{ reader: reader, 
@@ -149,7 +149,7 @@ impl<'a,'b> MessageScanner<'a,'b> {
     }
 }
 
-impl<'a,'b> Iterator<MessageParserEvent> for MessageScanner<'a,'b> {
+impl<R: Reader> Iterator<MessageParserEvent> for MessageScanner<R> {
 
     fn next(&mut self) -> Option<MessageParserEvent> {
         loop {
@@ -176,7 +176,7 @@ fn parser_test() {
 
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
 
-    let r = &mut MemReader::new(s.as_bytes().to_vec());
+    let r = MemReader::new(s.as_bytes().to_vec());
 
     let mut parser = MessageScanner::new(r);
 
@@ -194,7 +194,7 @@ fn multiline_header_test() {
 
     let s = "Header1: Line1\r\n\t  Line2\r\n\r\nBody".to_string();
 
-    let r = &mut MemReader::new(s.as_bytes().to_vec());
+    let r = MemReader::new(s.as_bytes().to_vec());
 
     let parser = MessageScanner::new(r);
 

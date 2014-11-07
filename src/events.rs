@@ -3,6 +3,7 @@
 pub enum MessageParserEvent {
     HeaderName(String),
     HeaderValue(String),
+    Header(String,String),
     EndOfHeaders,
     BodyChunk(Vec<u8>),
     ParseError,
