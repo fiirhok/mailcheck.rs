@@ -3,3 +3,7 @@
 name = "mailcheck"
 version = "0.0.1"
 authors = ["Scott McKay <scottm@mailchannels.com>"]
+
+[dependencies.encoding]
+
+git = "https://github.com/lifthrasiir/rust-encoding"

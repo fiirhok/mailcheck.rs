@@ -5,3 +5,4 @@ pub use self::events::MessageParserEvent;
 mod message_scanner;
 mod header_parser;
 mod events;
+mod rfc2047;
