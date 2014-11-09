@@ -5,10 +5,10 @@ extern crate encoding;
 
 use self::regex::Regex;
 use self::serialize::base64::FromBase64;
-use self::collections::str;
 use std::ascii::AsciiExt;
 
 use self::encoding::label::encoding_from_whatwg_label;
+use self::encoding::DecodeStrict;
 
 #[deriving(Show)]
 enum FromRFC2047Error {
@@ -56,12 +56,14 @@ fn b_decode(content: &str) -> Result<Vec<u8>, FromRFC2047Error> {
 }
 
 fn charset_decode(charset: &str, content: Vec<u8>) -> Result<String, FromRFC2047Error> {
-    match charset.to_ascii_lower().as_slice() {
-       "utf8"|"us-ascii" => match str::from_utf8(content.as_slice()) {
-           Some(x) => Ok(x.to_string()),
-           None => Err(CharsetError)
-       },
-       _ => Err(UnsupportedCharset)
+    match encoding_from_whatwg_label(charset) {
+        Some(encoding) => {
+            match encoding.decode(content.as_slice(), DecodeStrict) {
+                Ok(decoded) => Ok(decoded),
+                Err(_) => Err(CharsetError)
+            }
+        },
+        None => Err(UnsupportedCharset)
     }
 }
 
