@@ -1,9 +1,8 @@
-use message_scanner::MessageScanner;
 use events::{MessageParserEvent, HeaderName, HeaderValue, Header, 
-    EndOfHeaders, ParseError, End};
+    EndOfHeaders, ParseError, End, MessageParserStage};
 
-pub struct HeaderParser<R: Reader> {
-    scanner: Box<MessageScanner<R>>,
+pub struct HeaderParser<T: MessageParserStage> {
+    scanner: Box<T>,
     state: ParserState,
 }
 
@@ -17,8 +16,8 @@ enum ParserState {
     PendingEvents(Box<ParserState>, MessageParserEvent)
 }
 
-impl<R: Reader> HeaderParser<R> {
-    pub fn new(scanner: MessageScanner<R>) -> HeaderParser<R> {
+impl<T: MessageParserStage> HeaderParser<T> {
+    pub fn new(scanner: T) -> HeaderParser<T> {
         HeaderParser{ scanner: box scanner, state: ParseHeaderName }
     }
 
@@ -51,7 +50,7 @@ impl<R: Reader> HeaderParser<R> {
     }
 }
 
-impl<R: Reader> Iterator<MessageParserEvent> for HeaderParser<R> {
+impl<T: MessageParserStage> MessageParserStage for HeaderParser<T> {
 
     fn next(&mut self) -> Option<MessageParserEvent> {
 
@@ -76,6 +75,7 @@ fn parser_test() {
 
     use std::io::MemReader;
     use events::BodyChunk;
+    use message_scanner::MessageScanner;
 
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
 
@@ -84,7 +84,7 @@ fn parser_test() {
     let scanner = MessageScanner::new(r);
     let mut parser = HeaderParser::new(scanner);
 
-    let events = parser.collect();
+    let events = parser.iter().collect();
 
     assert_eq!(vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
                Header("Header1".to_string(), "Value1".to_string()),

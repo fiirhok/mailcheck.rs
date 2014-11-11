@@ -3,7 +3,7 @@ use std::io::EndOfFile;
 use std::char::is_whitespace;
 
 use events::{MessageParserEvent, HeaderName, HeaderValue, EndOfHeaders, 
-    BodyChunk, ParseError, NonEvent, End};
+    BodyChunk, ParseError, NonEvent, End, MessageParserStage};
 
 pub struct MessageScanner<R: Reader> {
     reader: R,
@@ -149,7 +149,7 @@ impl<R: Reader> MessageScanner<R> {
     }
 }
 
-impl<R: Reader> Iterator<MessageParserEvent> for MessageScanner<R> {
+impl<R: Reader> MessageParserStage for MessageScanner<R> {
 
     fn next(&mut self) -> Option<MessageParserEvent> {
         loop {
@@ -180,7 +180,7 @@ fn parser_test() {
 
     let mut parser = MessageScanner::new(r);
 
-    let events = parser.collect();
+    let events = parser.iter().collect();
 
     assert_eq!(vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
                HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
@@ -196,14 +196,14 @@ fn multiline_header_test() {
 
     let r = MemReader::new(s.as_bytes().to_vec());
 
-    let parser = MessageScanner::new(r);
+    let mut parser = MessageScanner::new(r);
 
     let expected_events = [HeaderName("Header1".to_string()), 
         HeaderValue("Line1\t  Line2".to_string()), 
         EndOfHeaders,
         BodyChunk(vec![66, 111, 100, 121])];
 
-    for (expected, actual) in expected_events.iter().zip(parser) {
+    for (expected, actual) in expected_events.iter().zip(parser.iter()) {
         assert_eq!(*expected, actual);
     }
 }
