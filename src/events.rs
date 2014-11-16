@@ -1,6 +1,7 @@
 
 #[deriving(Show, PartialEq, Clone)]
 pub enum MessageParserEvent {
+    MessageByte(u8),
     HeaderName(String),
     HeaderValue(String),
     Header(String,String),
@@ -12,20 +13,9 @@ pub enum MessageParserEvent {
 }
 
 pub trait MessageParserStage {
-    fn next(&mut self) -> Option<MessageParserEvent>;
-    fn iter(&mut self) -> MessageParserStageIterator {
-        MessageParserStageIterator{ source: self }
-    }
+    fn process_event(&mut self, event: MessageParserEvent);
 }
 
-
-struct MessageParserStageIterator<'a> {
-    source: &'a mut MessageParserStage + 'a
+pub trait MessageParserFilter<'a> : MessageParserStage {
+    fn new(next_stage: &'a mut MessageParserStage) -> Self;
 }
-
-impl<'a> Iterator<MessageParserEvent> for MessageParserStageIterator<'a> {
-    fn next(&mut self) -> Option<MessageParserEvent> {
-        self.source.next()
-    }
-}
-

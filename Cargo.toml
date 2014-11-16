@@ -7,3 +7,7 @@ authors = ["Scott McKay <scottm@mailchannels.com>"]
 [dependencies.encoding]
 
 git = "https://github.com/lifthrasiir/rust-encoding"
+
+[dependencies.time]
+
+git = "http://github.com/rust-lang/time"

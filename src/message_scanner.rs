@@ -1,15 +1,17 @@
 use std::vec::Vec;
-use std::io::EndOfFile;
 use std::char::is_whitespace;
 
-use events::{MessageParserEvent, HeaderName, HeaderValue, EndOfHeaders, 
-    BodyChunk, ParseError, NonEvent, End, MessageParserStage};
 
-pub struct MessageScanner<R: Reader> {
-    reader: R,
+use events::{MessageParserEvent, MessageByte,
+    HeaderName, HeaderValue, EndOfHeaders, 
+    BodyChunk, ParseError, End, 
+    MessageParserStage, MessageParserFilter};
+
+pub struct MessageScanner<'a> {
     state: ParserState,
     buf: Vec<u8>,
-    chunk_size: uint
+    chunk_size: uint,
+    next_stage: &'a mut MessageParserStage + 'a,
 }
 
 #[deriving(Clone)]
@@ -22,148 +24,178 @@ enum ParserState {
     ParseBody, 
     ParseFinished,
     ParseStateError,
-    PendingEvents(Box<ParserState>, MessageParserEvent)
 }
 
-impl<R: Reader> MessageScanner<R> {
-    pub fn new(reader: R) -> MessageScanner<R> {
+impl<'a> MessageParserFilter<'a> for MessageScanner<'a> {
+    fn new(next_stage: &'a mut MessageParserStage) -> MessageScanner<'a> {
         let chunk_size = 2048;
         let buf: Vec<u8> = Vec::with_capacity(chunk_size);
-        MessageScanner{ reader: reader, 
+        MessageScanner{ 
+            next_stage: next_stage,
             state: ParseHeaderName, 
             buf: buf,
-            chunk_size: chunk_size }
+            chunk_size: chunk_size 
+        }
     }
+}
 
-    fn parse_header_name(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
+impl<'a> MessageParserStage for MessageScanner<'a> {
+    fn process_event(&mut self, event: MessageParserEvent) {
+        let next_state = match event {
+            MessageByte(b) => self.process_byte(b),
+            End => self.process_end(),
+            e => {
+                self.next_stage.process_event(e);
+                self.state
+            }
+        };
+
+        self.state = next_state;
+    }
+}
+
+impl<'a> MessageScanner<'a> {
+    fn parse_header_name(&mut self, byte: u8) -> ParserState {
 
         match byte {
             b':' => match String::from_utf8(self.buf.clone()) {
-                    Ok(name) => { self.buf.clear(); (ParseHeaderValue, HeaderName(name)) },
-                    Err(_) => (ParseStateError, ParseError)
+                    Ok(name) => { 
+                        self.buf.clear(); 
+                        self.next_stage.process_event(HeaderName(name));
+                        ParseHeaderValue
+                    },
+                    Err(_) => {
+                        self.next_stage.process_event(ParseError);
+                        ParseStateError
+                    }
                 },
-            _ => { self.buf.push(byte); (ParseHeaderName, NonEvent) }
+            _ => { self.buf.push(byte); ParseHeaderName }
         }
     }
 
-    fn parse_header_value(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
+    fn parse_header_value(&mut self, byte: u8) -> ParserState {
         match byte {
-            b' ' if self.buf.len() == 0 => (ParseHeaderValue, NonEvent),
-            b'\r' => (ParseEndOfHeader, NonEvent),
-            b'\n' => (ParseStartHeaderLine, NonEvent),
-            _ => { self.buf.push(byte); (ParseHeaderValue, NonEvent) }
+            b' ' if self.buf.len() == 0 => ParseHeaderValue,
+            b'\r' => ParseEndOfHeader,
+            b'\n' => ParseStartHeaderLine,
+            _ => { self.buf.push(byte); ParseHeaderValue  }
 
         }
     }
 
-    fn parse_end_of_header(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
+    fn parse_end_of_header(&mut self, byte: u8) -> ParserState {
         match byte {
-            b'\n' => (ParseStartHeaderLine, NonEvent),
-            _ => (ParseStateError, ParseError)
+            b'\n' => ParseStartHeaderLine,
+            _ => {
+                self.next_stage.process_event(ParseError);
+                ParseStateError
+            }
         }
     }
 
-    fn parse_start_header_line(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
+    fn parse_start_header_line(&mut self, byte: u8) -> ParserState {
         match byte {
             b'\r' => {
                 match String::from_utf8(self.buf.clone()) {
                     Ok(value) => { 
-                        self.buf.clear(); (ParseEndOfHeaderSection, HeaderValue(value)) 
+                        self.buf.clear(); 
+                        self.next_stage.process_event(HeaderValue(value));
+                        ParseEndOfHeaderSection
                     },
-                    Err(_) => (ParseStateError, ParseError)
+                    Err(_) => {
+                        self.next_stage.process_event(ParseError);
+                        ParseStateError
+                    }
                 }
             }
             b'\n' => {
                 match String::from_utf8(self.buf.clone()) {
                     Ok(value) => { 
                         self.buf.clear(); 
-                        (PendingEvents(box ParseBody, EndOfHeaders), HeaderValue(value)) 
+                        self.next_stage.process_event(HeaderValue(value));
+                        self.next_stage.process_event(EndOfHeaders);
+                        ParseBody
                     },
-                    Err(_) => (ParseStateError, ParseError)
+                    Err(_) => {
+                        self.next_stage.process_event(ParseError);
+                        ParseStateError
+                    }
                 }
             }
             x if is_whitespace(x as char) => {
                 self.buf.push(x);
-                (ParseHeaderValue, NonEvent)
+                ParseHeaderValue
             },
             _ => match String::from_utf8(self.buf.clone()) {
                 Ok(value) => { 
                     self.buf.clear(); 
                     self.buf.push(byte);
-                    (ParseHeaderName, HeaderValue(value)) 
+                    self.next_stage.process_event(HeaderValue(value));
+                    ParseHeaderName
                 },
-                Err(_) => (ParseStateError, ParseError)
+                Err(_) => {
+                    self.next_stage.process_event(ParseError);
+                    ParseStateError
+                }
             },
         }
     }
 
-    fn parse_end_of_header_section(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
+    fn parse_end_of_header_section(&mut self, byte: u8) -> ParserState {
         match byte {
-            b'\n' => (ParseBody, EndOfHeaders),
-            _ => (ParseStateError, ParseError)
+            b'\n' => {
+                self.next_stage.process_event(EndOfHeaders);
+                ParseBody
+            }
+            _ => {
+                self.next_stage.process_event(ParseError);
+                ParseStateError
+            }
         }
     }
 
-    fn parse_body(&mut self, byte: u8) -> (ParserState, MessageParserEvent) {
+    fn parse_body(&mut self, byte: u8) -> ParserState {
         self.buf.push(byte);
         if self.buf.len() < self.chunk_size {
-            (ParseBody, NonEvent)
+            ParseBody
         }
         else {
-            let event = BodyChunk(self.buf.clone());
+            self.next_stage.process_event(BodyChunk(self.buf.clone()));
             self.buf.clear();
-            (ParseBody, event)
+            ParseBody
         }
     }
 
-    fn process_byte(&mut self) -> (ParserState, MessageParserEvent) {
-        let b = self.reader.read_byte();
-        match b {
-            Ok(byte) => {
-                match self.state {
-                    ParseFinished => (ParseFinished, End),
-                    ParseStateError => (ParseStateError, End),
-                    ParseHeaderName => self.parse_header_name(byte),
-                    ParseHeaderValue => self.parse_header_value(byte),
-                    ParseEndOfHeader => self.parse_end_of_header(byte),
-                    ParseStartHeaderLine => self.parse_start_header_line(byte),
-                    ParseEndOfHeaderSection => self.parse_end_of_header_section(byte),
-                    ParseBody => self.parse_body(byte),
-                    _ => (ParseStateError, ParseError),
-                }
+    fn process_byte(&mut self, byte: u8) -> ParserState {
+        match self.state {
+            ParseFinished => {
+                self.next_stage.process_event(End);
+                ParseFinished
             }
-            Err(e) => match e.kind {
-                EndOfFile => {
-                    match self.state {
-                        ParseFinished => (ParseFinished, End),
-                        _ => {
-                            let event = BodyChunk(self.buf.clone());
-                            self.buf.clear();
-                            (ParseFinished, event)
-                        }
-                    }
-                }
-                _ => (ParseStateError, ParseError)
+            ParseStateError => {
+                self.next_stage.process_event(End);
+                ParseFinished
             }
+            ParseHeaderName => self.parse_header_name(byte),
+            ParseHeaderValue => self.parse_header_value(byte),
+            ParseEndOfHeader => self.parse_end_of_header(byte),
+            ParseStartHeaderLine => self.parse_start_header_line(byte),
+            ParseEndOfHeaderSection => self.parse_end_of_header_section(byte),
+            ParseBody => self.parse_body(byte),
         }
     }
-}
 
-impl<R: Reader> MessageParserStage for MessageScanner<R> {
-
-    fn next(&mut self) -> Option<MessageParserEvent> {
-        loop {
-            let (next_state, event) = match self.state {
-                PendingEvents(box ref pending_state, ref pending_event) => 
-                    (pending_state.clone(), pending_event.clone()),
-                _ => self.process_byte() 
-            };
-
-            self.state = next_state;
-            match event {
-                NonEvent => continue,
-                End => return None,
-                e => return Some(e)
+    fn process_end(&mut self) -> ParserState {
+        match self.state {
+            ParseBody => {
+                self.next_stage.process_event(BodyChunk(self.buf.clone()));
+                self.buf.clear();
+                ParseFinished
+            }
+            ParseEndOfHeaderSection => ParseFinished,
+            _ => {
+                self.next_stage.process_event(ParseError);
+                ParseStateError
             }
         }
     }
@@ -171,39 +203,41 @@ impl<R: Reader> MessageParserStage for MessageScanner<R> {
 
 #[test]
 fn parser_test() {
-
-    use std::io::MemReader;
-
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
-
-    let r = MemReader::new(s.as_bytes().to_vec());
-
-    let mut parser = MessageScanner::new(r);
-
-    let events = parser.iter().collect();
-
-    assert_eq!(vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
+    let expected_events = vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
                HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
-               EndOfHeaders, BodyChunk(vec![66, 111, 100, 121])], events);
+               EndOfHeaders, BodyChunk(vec![66, 111, 100, 121])];
+
+    test_message_scanner(s, expected_events);
 }
 
 #[test]
 fn multiline_header_test() {
-
-    use std::io::MemReader;
-
     let s = "Header1: Line1\r\n\t  Line2\r\n\r\nBody".to_string();
-
-    let r = MemReader::new(s.as_bytes().to_vec());
-
-    let mut parser = MessageScanner::new(r);
-
-    let expected_events = [HeaderName("Header1".to_string()), 
+    let expected_events = vec![HeaderName("Header1".to_string()), 
         HeaderValue("Line1\t  Line2".to_string()), 
         EndOfHeaders,
         BodyChunk(vec![66, 111, 100, 121])];
 
-    for (expected, actual) in expected_events.iter().zip(parser.iter()) {
-        assert_eq!(*expected, actual);
+    test_message_scanner(s, expected_events);
+}
+
+#[cfg(test)]
+fn test_message_scanner(msg: String, expected_events: Vec<MessageParserEvent>) {
+    use std::io::MemReader;
+    use message_parser_sink::MessageParserSink;
+    use reader_parser::ReaderParser;
+
+
+    let mut sink = MessageParserSink::new();
+    {
+        let r = MemReader::new(msg.as_bytes().to_vec());
+        let mut parser: MessageScanner = MessageParserFilter::new(&mut sink);
+        let mut rp = ReaderParser::new(&mut parser, r);
+
+        rp.read_to_end();
     }
+
+    assert_eq!(expected_events, sink.events());
+
 }
