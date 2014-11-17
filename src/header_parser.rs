@@ -1,70 +1,77 @@
 use events::{MessageParserEvent, HeaderName, HeaderValue, Header, 
-    EndOfHeaders, ParseError, End, MessageParserStage};
+    EndOfHeaders, ParseError};
+use events::{MessageParserStage, MessageParserFilter};
 
-pub struct HeaderParser<T: MessageParserStage> {
-    scanner: Box<T>,
+pub struct HeaderParser<'a> {
     state: ParserState,
+    name: Option<String>,
+    next_stage: &'a mut MessageParserStage + 'a
 }
 
-#[deriving(Clone)]
 enum ParserState {
     ParseHeaderName,
-    ParseHeaderValue(String),
-    ParseBody,
+    ParseHeaderValue,
     ParseFinished,
-    ParseStateError,
-    PendingEvents(Box<ParserState>, MessageParserEvent)
 }
 
-impl<T: MessageParserStage> HeaderParser<T> {
-    pub fn new(scanner: T) -> HeaderParser<T> {
-        HeaderParser{ scanner: box scanner, state: ParseHeaderName }
-    }
-
-    fn process_scanner_event(&mut self) -> (ParserState, MessageParserEvent) {
-        match self.scanner.next() {
-            Some(scanner_event) => match self.state.clone() {
-                ParseHeaderName => self.parse_header_name(scanner_event),
-                ParseHeaderValue(name) => self.parse_header_value(scanner_event, name),
-                ParseBody => (ParseBody, scanner_event),
-                _ => (ParseStateError, ParseError)
+impl<'a> MessageParserStage for HeaderParser<'a> {
+    fn process_event(&mut self, event: MessageParserEvent) {
+        let next_state = match self.state {
+            ParseHeaderName => self.parse_header_name(event),
+            ParseHeaderValue => self.parse_header_value(event),
+            ParseFinished =>  {
+                self.next_stage.process_event(event);
+                ParseFinished
             },
-            None => (ParseFinished, End)
-        }
+        };
+        self.state = next_state;
     }
+}
 
-    fn parse_header_name(&mut self, scanner_event: MessageParserEvent) -> (ParserState, MessageParserEvent) {
-        match scanner_event.clone() {
-            HeaderName(name) => (ParseHeaderValue(name), scanner_event),
-            EndOfHeaders => (ParseBody, scanner_event),
-            _ => (ParseStateError, ParseError)
-        }
-    }
-    
-    fn parse_header_value(&mut self, scanner_event: MessageParserEvent, name: String) -> (ParserState, MessageParserEvent) {
-        match scanner_event.clone() {
-            HeaderValue(value) => 
-                (PendingEvents(box ParseHeaderName, Header(name, value)), scanner_event),
-            _ => (ParseStateError, ParseError)
+impl<'a> MessageParserFilter<'a> for HeaderParser<'a> {
+    fn new(next_stage: &'a mut MessageParserStage) -> HeaderParser<'a> {
+        HeaderParser{ 
+            next_stage: next_stage, 
+            name: None,
+            state: ParseHeaderName 
         }
     }
 }
 
-impl<T: MessageParserStage> MessageParserStage for HeaderParser<T> {
-
-    fn next(&mut self) -> Option<MessageParserEvent> {
-
-        let (next_state, event) = match self.state {
-                PendingEvents(box ref pending_state, ref pending_event) =>
-                    (pending_state.clone(), pending_event.clone()),
-                _ => self.process_scanner_event()
-            };
-        
-        self.state = next_state;
-    
+impl<'a> HeaderParser<'a> {
+    fn parse_header_name(&mut self, event: MessageParserEvent) -> ParserState {
         match event {
-            End => return None,
-            e => return Some(e)
+            HeaderName(ref name) => {
+                self.next_stage.process_event(event.clone());
+                self.name = Some(name.clone());
+                ParseHeaderValue
+            }
+            EndOfHeaders => {
+                self.next_stage.process_event(event);
+                ParseFinished
+            },
+            _ => { 
+                self.next_stage.process_event(ParseError);
+                ParseFinished
+            }
+        }
+    }
+    
+    fn parse_header_value(&mut self, event: MessageParserEvent) -> ParserState {
+        match event {
+            HeaderValue(ref value) =>  {
+                self.next_stage.process_event(event.clone());
+                {
+                    let name = self.name.clone().expect("ERROR: Header value with no header name");
+                    self.next_stage.process_event(Header(name, value.clone()));
+                }
+                self.name = None;
+                ParseHeaderName
+            }
+            _ => { 
+                self.next_stage.process_event(ParseError);
+                ParseFinished
+            }
         }
     }
 }
@@ -72,23 +79,39 @@ impl<T: MessageParserStage> MessageParserStage for HeaderParser<T> {
 
 #[test]
 fn parser_test() {
-
-    use std::io::MemReader;
     use events::BodyChunk;
-    use message_scanner::MessageScanner;
 
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
 
-    let r = MemReader::new(s.as_bytes().to_vec());
+    let expected_events = vec![HeaderName("Header1".to_string()), 
+        HeaderValue("Value1".to_string()), 
+        Header("Header1".to_string(), "Value1".to_string()),
+        HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
+        Header("Header2".to_string(), "Value2".to_string()),
+        EndOfHeaders, BodyChunk(vec![66, 111, 100, 121])];
 
-    let scanner = MessageScanner::new(r);
-    let mut parser = HeaderParser::new(scanner);
+    test_message_parser(s, expected_events);
+}
 
-    let events = parser.iter().collect();
 
-    assert_eq!(vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
-               Header("Header1".to_string(), "Value1".to_string()),
-               HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
-               Header("Header2".to_string(), "Value2".to_string()),
-               EndOfHeaders, BodyChunk(vec![66, 111, 100, 121])], events);
+#[cfg(test)]
+fn test_message_parser(msg: String, expected_events: Vec<MessageParserEvent>) {
+    use std::io::MemReader;
+    use message_parser_sink::MessageParserSink;
+    use reader_parser::ReaderParser;
+    use message_scanner::MessageScanner;
+
+
+    let mut sink = MessageParserSink::new();
+    {
+        let r = MemReader::new(msg.as_bytes().to_vec());
+        let mut parser: HeaderParser = MessageParserFilter::new(&mut sink);
+        let mut scanner: MessageScanner = MessageParserFilter::new(&mut parser);
+        let mut rp = ReaderParser::new(&mut scanner, r);
+
+        rp.read_to_end();
+    }
+
+    assert_eq!(expected_events, sink.events());
+
 }

@@ -1,25 +1,26 @@
 use rfc2047::FromRFC2047;
-use events::{MessageParserEvent, Header, MessageParserStage};
+use events::{MessageParserEvent, Header};
+use events::{MessageParserStage, MessageParserFilter};
 
-pub struct HeaderDecoder<T: MessageParserStage> {
-    source: Box<T>
+pub struct HeaderDecoder<'a> {
+    next_stage: &'a mut MessageParserStage + 'a
 }
 
-impl<T: MessageParserStage> HeaderDecoder<T> {
-    pub fn new(source: T) -> HeaderDecoder<T> {
-        HeaderDecoder { source: box source }
+impl<'a> MessageParserFilter<'a> for HeaderDecoder<'a> {
+    fn new(next_stage: &'a mut MessageParserStage) -> HeaderDecoder<'a> {
+        HeaderDecoder { next_stage: next_stage }
     }
 
 }
 
-impl<T: MessageParserStage> MessageParserStage for HeaderDecoder<T>
+impl<'a> MessageParserStage for HeaderDecoder<'a>
 {
-    fn next(&mut self) -> Option<MessageParserEvent> {
-        match self.source.next() {
-            Some(Header(name, value)) => {
-                Some(Header(name, value.from_rfc2047()))
+    fn process_event(&mut self, event: MessageParserEvent) {
+        match event {
+            Header(name, value) => {
+                self.next_stage.process_event(Header(name, value.from_rfc2047()))
             },
-            event => event
+            _ => self.next_stage.process_event(event)
         }
     }
 }

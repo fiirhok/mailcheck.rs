@@ -8,7 +8,7 @@ fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
 {
     use std::io::{BufferedReader, File};
     use mailcheck::MessageParserFilter;
-    use mailcheck::MessageScanner;
+    use mailcheck::{MessageScanner, HeaderParser, HeaderDecoder};
     use mailcheck::{ReaderParser, MessageParserSink};
 
 
@@ -17,8 +17,10 @@ fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
     let mut sink = MessageParserSink::new();
     {
         let reader = BufferedReader::new(file);
-        let mut parser: MessageScanner = MessageParserFilter::new(&mut sink);
-        let mut rp = ReaderParser::new(&mut parser, reader);
+        let mut header_decoder: HeaderDecoder= MessageParserFilter::new(&mut sink);
+        let mut header_parser: HeaderParser = MessageParserFilter::new(&mut header_decoder);
+        let mut message_scanner: MessageScanner = MessageParserFilter::new(&mut header_parser);
+        let mut rp = ReaderParser::new(&mut message_scanner, reader);
 
         rp.read_to_end();
     }
