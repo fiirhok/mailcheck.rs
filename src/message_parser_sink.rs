@@ -12,6 +12,10 @@ impl MessageParserSink {
     pub fn events(&self) -> Vec<MessageParserEvent> {
         self.events.clone()
     }
+
+    pub fn contains(&self, event: &MessageParserEvent) -> bool {
+        self.events.contains(event)
+    }
 }
 
 impl MessageParserStage for MessageParserSink {

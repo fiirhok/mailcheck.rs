@@ -1,6 +1,9 @@
-use events::{MessageParserEvent, HeaderName, HeaderValue, Header, 
+use events::MessageParserEvent::{HeaderName, HeaderValue, Header, 
     EndOfHeaders, ParseError};
 use events::{MessageParserStage, MessageParserFilter};
+use events::MessageParserEvent;
+
+use self::ParserState::{ParseHeaderName, ParseHeaderValue, ParseFinished};
 
 pub struct HeaderParser<'a> {
     state: ParserState,
@@ -79,7 +82,7 @@ impl<'a> HeaderParser<'a> {
 
 #[test]
 fn parser_test() {
-    use events::BodyChunk;
+    use events::MessageParserEvent::BodyChunk;
 
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
 

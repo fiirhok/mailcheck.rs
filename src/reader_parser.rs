@@ -1,4 +1,5 @@
-use events::{MessageParserStage, End, MessageByte, ParseError};
+use events::MessageParserStage;
+use events::MessageParserEvent::{End, MessageByte, ParseError};
 use std::io::EndOfFile;
 
 pub struct ReaderParser<'a, R: Reader> {

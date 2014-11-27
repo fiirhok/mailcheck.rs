@@ -1,5 +1,6 @@
 use rfc2047::FromRFC2047;
-use events::{MessageParserEvent, Header};
+use events::MessageParserEvent::Header;
+use events::MessageParserEvent;
 use events::{MessageParserStage, MessageParserFilter};
 
 pub struct HeaderDecoder<'a> {

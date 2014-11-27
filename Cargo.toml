@@ -4,10 +4,7 @@ name = "mailcheck"
 version = "0.0.1"
 authors = ["Scott McKay <scottm@mailchannels.com>"]
 
-[dependencies.encoding]
+[dependencies]
 
-git = "https://github.com/lifthrasiir/rust-encoding"
-
-[dependencies.time]
-
-git = "http://github.com/rust-lang/time"
+time = "~0.0.3"
+encoding = "~0.2.3"

@@ -1,6 +1,5 @@
 extern crate regex;
 extern crate serialize;
-extern crate collections;
 extern crate encoding;
 
 use self::regex::{Regex, Captures};
@@ -9,7 +8,10 @@ use std::ascii::AsciiExt;
 use std::num::FromStrRadix;
 
 use self::encoding::label::encoding_from_whatwg_label;
-use self::encoding::DecodeReplace;
+use self::encoding::DecoderTrap;
+
+use self::FromRFC2047Error::{UnsupportedEncoding, UnsupportedCharset, 
+    DecodingError, CharsetError};
 
 #[deriving(Show)]
 enum FromRFC2047Error {
@@ -69,7 +71,7 @@ fn b_decode(content: &str) -> Result<Vec<u8>, FromRFC2047Error> {
 fn charset_decode(charset: &str, content: Vec<u8>) -> Result<String, FromRFC2047Error> {
     match encoding_from_whatwg_label(charset) {
         Some(encoding) => {
-            match encoding.decode(content.as_slice(), DecodeReplace) {
+            match encoding.decode(content.as_slice(), DecoderTrap::Replace) {
                 Ok(decoded) => Ok(decoded),
                 Err(_) => Err(CharsetError)
             }

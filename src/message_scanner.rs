@@ -2,10 +2,14 @@ use std::vec::Vec;
 use std::char::is_whitespace;
 
 
-use events::{MessageParserEvent, MessageByte,
+use events::MessageParserEvent::{MessageByte,
     HeaderName, HeaderValue, EndOfHeaders, 
-    BodyChunk, ParseError, End, 
-    MessageParserStage, MessageParserFilter};
+    BodyChunk, ParseError, End};
+use events::{MessageParserEvent, MessageParserStage, MessageParserFilter};
+
+use self::ParserState::{ParseHeaderName, ParseHeaderValue,
+    ParseEndOfHeader, ParseStartHeaderLine, ParseEndOfHeaderSection,
+    ParseBody, ParseFinished, ParseStateError};
 
 pub struct MessageScanner<'a> {
     state: ParserState,
