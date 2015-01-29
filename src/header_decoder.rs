@@ -4,7 +4,7 @@ use events::MessageParserEvent;
 use events::{MessageParserStage, MessageParserFilter};
 
 pub struct HeaderDecoder<'a> {
-    next_stage: &'a mut MessageParserStage + 'a
+    next_stage: &'a mut (MessageParserStage + 'a)
 }
 
 impl<'a> MessageParserFilter<'a> for HeaderDecoder<'a> {

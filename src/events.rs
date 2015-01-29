@@ -1,5 +1,5 @@
 
-#[deriving(Show, PartialEq, Clone)]
+#[derive(Show, PartialEq, Clone)]
 pub enum MessageParserEvent {
     MessageByte(u8),
     HeaderName(String),

@@ -1,9 +1,9 @@
 extern crate regex;
-extern crate serialize;
+extern crate "rustc-serialize" as rustc_serialize;
 extern crate encoding;
 
 use self::regex::{Regex, Captures};
-use self::serialize::base64::FromBase64;
+use self::rustc_serialize::base64::FromBase64;
 use std::ascii::AsciiExt;
 use std::num::FromStrRadix;
 
@@ -13,7 +13,7 @@ use self::encoding::DecoderTrap;
 use self::FromRFC2047Error::{UnsupportedEncoding, UnsupportedCharset, 
     DecodingError, CharsetError};
 
-#[deriving(Show)]
+#[derive(Show)]
 enum FromRFC2047Error {
     UnsupportedEncoding,
     UnsupportedCharset,
@@ -21,7 +21,7 @@ enum FromRFC2047Error {
     CharsetError,
 }
 
-pub trait FromRFC2047 for Sized? {
+pub trait FromRFC2047 {
     fn from_rfc2047(&self) -> String;
 }
 
@@ -31,12 +31,12 @@ fn encoded_word_regex() -> Regex {
     let encoding_char = token;
     let encoded_char = r"[^\? ]";
     let re_str = format!(r"=\?({}*)\?({}*)\?({}*)\?=",
-    charset_char, encoding_char, encoded_char);
+        charset_char, encoding_char, encoded_char);
     Regex::new(re_str.as_slice()).unwrap()
 }
 
 fn decode_word(charset: &str, encoding: &str, content: &str) -> Result<String, FromRFC2047Error> {
-    let decoded_content = match encoding.to_ascii_lower().as_slice() {
+    let decoded_content = match encoding.to_ascii_lowercase().as_slice() {
         "q" => q_decode(content),
         "b" => b_decode(content),
         _ => Err(UnsupportedEncoding)
@@ -85,10 +85,15 @@ impl FromRFC2047 for str {
         let encoded_word_re = encoded_word_regex();
 
         let ws_removed = Regex::new(r"\?=\s*=\?").unwrap().replace_all(self, "?==?");
-        encoded_word_re.replace_all(ws_removed.as_slice(), |caps: &Captures| {
-            match decode_word(caps.at(1), caps.at(2), caps.at(3)) {
-                Ok(decoded) => decoded,
-                Err(_) => caps.at(0).to_string()
+        encoded_word_re.replace_all(ws_removed.as_slice(), |&: caps: &Captures| {
+            match (caps.at(1), caps.at(2), caps.at(3)) {
+                (Some(charset), Some(encoding), Some(content)) => {
+                    match decode_word(charset, encoding, content) {
+                        Ok(decoded) => decoded,
+                        Err(_) => self.to_string()
+                    }
+                }
+                _ => self.to_string()
             }
         })
     }

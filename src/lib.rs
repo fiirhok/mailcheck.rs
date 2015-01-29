@@ -1,3 +1,8 @@
+#![feature(plugin)]
+#[plugin] 
+extern crate regex_macros;
+extern crate regex;
+
 pub use self::events::{MessageParserEvent, MessageParserStage, MessageParserFilter};
 pub use self::message_scanner::MessageScanner;
 pub use self::header_parser::HeaderParser;

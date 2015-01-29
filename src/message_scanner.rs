@@ -1,5 +1,5 @@
 use std::vec::Vec;
-use std::char::is_whitespace;
+use std::char::CharExt;
 
 
 use events::MessageParserEvent::{MessageByte,
@@ -14,11 +14,11 @@ use self::ParserState::{ParseHeaderName, ParseHeaderValue,
 pub struct MessageScanner<'a> {
     state: ParserState,
     buf: Vec<u8>,
-    chunk_size: uint,
-    next_stage: &'a mut MessageParserStage + 'a,
+    chunk_size: usize,
+    next_stage: &'a mut (MessageParserStage + 'a),
 }
 
-#[deriving(Clone)]
+#[derive(Clone, Show)]
 enum ParserState {
     ParseHeaderName,
     ParseHeaderValue,
@@ -32,7 +32,7 @@ enum ParserState {
 
 impl<'a> MessageParserFilter<'a> for MessageScanner<'a> {
     fn new(next_stage: &'a mut MessageParserStage) -> MessageScanner<'a> {
-        let chunk_size = 2048;
+        let chunk_size: usize = 2048;
         let buf: Vec<u8> = Vec::with_capacity(chunk_size);
         MessageScanner{ 
             next_stage: next_stage,
@@ -50,7 +50,7 @@ impl<'a> MessageParserStage for MessageScanner<'a> {
             End => self.process_end(),
             e => {
                 self.next_stage.process_event(e);
-                self.state
+                self.state.clone()
             }
         };
 
@@ -91,6 +91,7 @@ impl<'a> MessageScanner<'a> {
         match byte {
             b'\n' => ParseStartHeaderLine,
             _ => {
+                println!("unexpected character: {:?}", byte);
                 self.next_stage.process_event(ParseError);
                 ParseStateError
             }
@@ -126,7 +127,7 @@ impl<'a> MessageScanner<'a> {
                     }
                 }
             }
-            x if is_whitespace(x as char) => {
+            x if CharExt::is_whitespace(x as char) => {
                 self.buf.push(x);
                 ParseHeaderValue
             },
@@ -194,9 +195,13 @@ impl<'a> MessageScanner<'a> {
             ParseBody => {
                 self.next_stage.process_event(BodyChunk(self.buf.clone()));
                 self.buf.clear();
+                self.next_stage.process_event(End);
                 ParseFinished
             }
-            ParseEndOfHeaderSection => ParseFinished,
+            ParseEndOfHeaderSection => {
+                self.next_stage.process_event(End);
+                ParseFinished
+            },
             _ => {
                 self.next_stage.process_event(ParseError);
                 ParseStateError
@@ -210,7 +215,7 @@ fn parser_test() {
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
     let expected_events = vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
                HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
-               EndOfHeaders, BodyChunk(vec![66, 111, 100, 121])];
+               EndOfHeaders, BodyChunk(vec![66, 111, 100, 121]),End];
 
     test_message_scanner(s, expected_events);
 }
@@ -221,7 +226,7 @@ fn multiline_header_test() {
     let expected_events = vec![HeaderName("Header1".to_string()), 
         HeaderValue("Line1\t  Line2".to_string()), 
         EndOfHeaders,
-        BodyChunk(vec![66, 111, 100, 121])];
+        BodyChunk(vec![66, 111, 100, 121]),End];
 
     test_message_scanner(s, expected_events);
 }

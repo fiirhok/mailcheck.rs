@@ -6,7 +6,7 @@ use mailcheck::MessageParserEvent;
 
 fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
 {
-    use std::io::{BufferedReader, File};
+    use std::old_io::{BufferedReader, File};
     use mailcheck::MessageParserFilter;
     use mailcheck::{MessageScanner, HeaderParser, HeaderDecoder, DkimChecker};
     use mailcheck::{ReaderParser, MessageParserSink};
@@ -17,9 +17,9 @@ fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
     let mut sink = MessageParserSink::new();
     {
         let reader = BufferedReader::new(file);
-        let mut dkim_checker: DkimChecker = MessageParserFilter::new(&mut sink);
-        let mut header_decoder: HeaderDecoder= MessageParserFilter::new(&mut dkim_checker);
-        let mut header_parser: HeaderParser = MessageParserFilter::new(&mut header_decoder);
+        let mut header_decoder: HeaderDecoder= MessageParserFilter::new(&mut sink);
+        let mut dkim_checker: DkimChecker = MessageParserFilter::new(&mut header_decoder);
+        let mut header_parser: HeaderParser = MessageParserFilter::new(&mut dkim_checker);
         let mut message_scanner: MessageScanner = MessageParserFilter::new(&mut header_parser);
         let mut rp = ReaderParser::new(&mut message_scanner, reader);
 
@@ -30,7 +30,7 @@ fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
 
 fn process_dir(dir: &Path) {
     use std::sync::Future;
-    use std::io::fs;
+    use std::old_io::fs;
 
     match fs::readdir(dir) {
         Ok(msgs) => {
@@ -38,7 +38,7 @@ fn process_dir(dir: &Path) {
 
             let mut events : Vec<Future<uint>> = msgs.iter().map(|msg| {
                 let path = msg.clone();
-                Future::spawn(proc() { parse_msg(&path).iter().count() })
+                Future::spawn(move || { parse_msg(&path).iter().count() })
             }).collect();
             let msg_count = events.len();
             let event_count = events.iter_mut().map(|e| e.get()).fold(0, |sum, x| sum + x);
@@ -64,7 +64,7 @@ fn process_msg(dir: Path, msg: &str) {
 
     for event in events.iter() {
         match event {
-            //e => println!("{}", e)
+            //e => println!("{:?}", e)
             _ => ()
         }
     }
@@ -74,6 +74,6 @@ fn main() {
     let dir = Path::new("/Users/smckay/projects/rust/mailcheck/msgs");
 
     //process_dir(&dir);
-    process_msg(dir, "msg2");
+    process_msg(dir, "msg1");
 }
 

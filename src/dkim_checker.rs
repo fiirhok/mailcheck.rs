@@ -1,20 +1,25 @@
+extern crate openssl;
+
 use events::MessageParserEvent;
 use events::{MessageParserStage,MessageParserFilter};
-use events::MessageParserEvent::Header;
+use events::MessageParserEvent::{Header, BodyChunk};
 
-use self::DkimState::{Start,DkimSignatureSeen};
+use self::DkimState::{Start,DkimSignatureSeen,Finished};
 
 use dkim::DkimSignature;
+use dkim::DkimVerifier;
 
 pub struct DkimChecker<'a> {
     state: DkimState,
-    signatures: Vec<DkimSignature>,
-    next_stage: &'a mut MessageParserStage + 'a
+    signatures: Vec<DkimVerifier<'a>>,
+    next_stage: &'a mut (MessageParserStage + 'a)
 }
 
+#[derive(Show, Clone)]
 enum DkimState {
     Start,
-    DkimSignatureSeen
+    DkimSignatureSeen,
+    Finished
 }
 
 impl<'a> MessageParserStage for DkimChecker<'a> {
@@ -22,7 +27,11 @@ impl<'a> MessageParserStage for DkimChecker<'a> {
     fn process_event(&mut self, event: MessageParserEvent) {
         let next_state = match self.state {
             Start => self.parse_dkim_headers(event),
-            DkimSignatureSeen => self.parse_signed_headers(event)
+            DkimSignatureSeen => self.parse_message(event),
+            Finished => {
+                self.next_stage.process_event(event);
+                Finished
+            }
         };
 
         self.state = next_state;
@@ -48,24 +57,47 @@ impl<'a> DkimChecker<'a> {
                 let signature = DkimSignature::parse(value.as_slice());
                 match signature {
                     Ok(s) => {
-                        println!("{}", s);
-                        self.signatures.push(s);
+                        self.signatures.push( DkimVerifier::new(s) );
                     }
                     Err(e) => {
-                        println!("{}", e);
+                        println!("{:?}", e);
                     }
                 }
                 DkimSignatureSeen
             }
             _ => {
                 self.next_stage.process_event(event);
-                self.state
+                self.state.clone()
             }
         }
     }
 
-    fn parse_signed_headers(&mut self, event: MessageParserEvent) -> DkimState {
-        DkimSignatureSeen
+    fn parse_message(&mut self, event: MessageParserEvent) -> DkimState {
+        match event {
+            BodyChunk(ref data) => {
+                for sig in self.signatures.iter_mut() {
+                    sig.update_body(data);
+                }
+                self.next_stage.process_event(event.clone());
+                DkimSignatureSeen
+            }
+            MessageParserEvent::End => {
+                loop {
+                    let signature = match self.signatures.pop() {
+                        Some( sig ) => {
+                            sig.finalize_body();
+                        }
+                        None => break
+                    };
+                }
+                self.next_stage.process_event(event);
+                Finished
+            }
+            _ => {
+                self.next_stage.process_event(event);
+                DkimSignatureSeen
+            }
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 use events::MessageParserEvent::{HeaderName, HeaderValue, Header, 
-    EndOfHeaders, ParseError};
+    EndOfHeaders, ParseError, End};
 use events::{MessageParserStage, MessageParserFilter};
 use events::MessageParserEvent;
 
@@ -8,7 +8,7 @@ use self::ParserState::{ParseHeaderName, ParseHeaderValue, ParseFinished};
 pub struct HeaderParser<'a> {
     state: ParserState,
     name: Option<String>,
-    next_stage: &'a mut MessageParserStage + 'a
+    next_stage: &'a mut (MessageParserStage + 'a)
 }
 
 enum ParserState {
@@ -91,7 +91,7 @@ fn parser_test() {
         Header("Header1".to_string(), "Value1".to_string()),
         HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
         Header("Header2".to_string(), "Value2".to_string()),
-        EndOfHeaders, BodyChunk(vec![66, 111, 100, 121])];
+        EndOfHeaders, BodyChunk(vec![66, 111, 100, 121]),End];
 
     test_message_parser(s, expected_events);
 }
