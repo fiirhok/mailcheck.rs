@@ -13,7 +13,7 @@ use self::encoding::DecoderTrap;
 use self::FromRFC2047Error::{UnsupportedEncoding, UnsupportedCharset, 
     DecodingError, CharsetError};
 
-#[derive(Show)]
+#[derive(Debug)]
 enum FromRFC2047Error {
     UnsupportedEncoding,
     UnsupportedCharset,

@@ -8,6 +8,7 @@ use self::ParserState::{ParseHeaderName, ParseHeaderValue, ParseFinished};
 pub struct HeaderParser<'a> {
     state: ParserState,
     name: Option<String>,
+    buf: Vec<u8>,
     next_stage: &'a mut (MessageParserStage + 'a)
 }
 
@@ -36,6 +37,7 @@ impl<'a> MessageParserFilter<'a> for HeaderParser<'a> {
         HeaderParser{ 
             next_stage: next_stage, 
             name: None,
+            buf: vec![],
             state: ParseHeaderName 
         }
     }
@@ -46,7 +48,12 @@ impl<'a> HeaderParser<'a> {
         match event {
             HeaderName(ref name) => {
                 self.next_stage.process_event(event.clone());
-                self.name = Some(name.clone());
+                self.buf.push_all(name.as_bytes());
+                let mut trimmed = name.clone();
+                // TODO: check to make sure header name ends with ':'
+                // but this should always be the case
+                trimmed.pop();
+                self.name = Some(trimmed);
                 ParseHeaderValue
             }
             EndOfHeaders => {
@@ -63,10 +70,14 @@ impl<'a> HeaderParser<'a> {
     fn parse_header_value(&mut self, event: MessageParserEvent) -> ParserState {
         match event {
             HeaderValue(ref value) =>  {
+                self.buf.push_all(value.as_bytes());
                 self.next_stage.process_event(event.clone());
                 {
                     let name = self.name.clone().expect("ERROR: Header value with no header name");
-                    self.next_stage.process_event(Header(name, value.clone()));
+                    let trimmed = value.as_slice().trim().trim_right_matches(':');
+
+                    self.next_stage.process_event(Header(name, trimmed.to_string(), self.buf.clone()));
+                    self.buf.clear();
                 }
                 self.name = None;
                 ParseHeaderName
@@ -86,11 +97,12 @@ fn parser_test() {
 
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
 
-    let expected_events = vec![HeaderName("Header1".to_string()), 
-        HeaderValue("Value1".to_string()), 
-        Header("Header1".to_string(), "Value1".to_string()),
-        HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
-        Header("Header2".to_string(), "Value2".to_string()),
+    let expected_events = vec![HeaderName("Header1:".to_string()), 
+        HeaderValue(" Value1\r\n".to_string()), 
+        Header("Header1".to_string(), "Value1".to_string(), "Header1: Value1\r\n".bytes().collect()),
+        HeaderName("Header2:".to_string()), 
+        HeaderValue(" Value2\r\n".to_string()),
+        Header("Header2".to_string(), "Value2".to_string(), "Header2: Value2\r\n".bytes().collect()),
         EndOfHeaders, BodyChunk(vec![66, 111, 100, 121]),End];
 
     test_message_parser(s, expected_events);
@@ -99,7 +111,7 @@ fn parser_test() {
 
 #[cfg(test)]
 fn test_message_parser(msg: String, expected_events: Vec<MessageParserEvent>) {
-    use std::io::MemReader;
+    use std::old_io::MemReader;
     use message_parser_sink::MessageParserSink;
     use reader_parser::ReaderParser;
     use message_scanner::MessageScanner;
@@ -115,6 +127,11 @@ fn test_message_parser(msg: String, expected_events: Vec<MessageParserEvent>) {
         rp.read_to_end();
     }
 
-    assert_eq!(expected_events, sink.events());
+    let actual = sink.events();
+    let zipped = expected_events.iter().zip(actual.iter());
+
+    for (expected,actual) in zipped {
+        assert_eq!(expected, actual);
+    }
 
 }

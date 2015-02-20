@@ -1,10 +1,10 @@
 
-#[derive(Show, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum MessageParserEvent {
     MessageByte(u8),
     HeaderName(String),
     HeaderValue(String),
-    Header(String,String),
+    Header(String,String,Vec<u8>),
     EndOfHeaders,
     BodyChunk(Vec<u8>),
     ParseError,

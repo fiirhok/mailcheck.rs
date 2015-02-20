@@ -15,7 +15,7 @@ pub struct DkimChecker<'a> {
     next_stage: &'a mut (MessageParserStage + 'a)
 }
 
-#[derive(Show, Clone)]
+#[derive(Debug, Clone)]
 enum DkimState {
     Start,
     DkimSignatureSeen,
@@ -52,7 +52,7 @@ impl<'a> DkimChecker<'a> {
     fn parse_dkim_headers(&mut self, event: MessageParserEvent) -> DkimState {
         let dkim_signature_header = String::from_str("DKIM-Signature");
         match event {
-            Header(ref name, ref value) if *name == dkim_signature_header => {
+            Header(ref name, ref value, _) if *name == dkim_signature_header => {
                 println!("===>  DKIM-Signature: {}", value);
                 let signature = DkimSignature::parse(value.as_slice());
                 match signature {
@@ -119,7 +119,7 @@ Body".to_string();
 
 #[cfg(test)]
 fn test_message_parser(msg: String, expected_events: Vec<MessageParserEvent>) {
-    use std::io::MemReader;
+    use std::old_io::MemReader;
     use message_parser_sink::MessageParserSink;
     use reader_parser::ReaderParser;
     use message_scanner::MessageScanner;

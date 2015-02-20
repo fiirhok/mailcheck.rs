@@ -18,7 +18,7 @@ pub struct MessageScanner<'a> {
     next_stage: &'a mut (MessageParserStage + 'a),
 }
 
-#[derive(Clone, Show)]
+#[derive(Clone, Debug)]
 enum ParserState {
     ParseHeaderName,
     ParseHeaderValue,
@@ -62,7 +62,9 @@ impl<'a> MessageScanner<'a> {
     fn parse_header_name(&mut self, byte: u8) -> ParserState {
 
         match byte {
-            b':' => match String::from_utf8(self.buf.clone()) {
+            b':' => { 
+                self.buf.push(byte);
+                match String::from_utf8(self.buf.clone()) {
                     Ok(name) => { 
                         self.buf.clear(); 
                         self.next_stage.process_event(HeaderName(name));
@@ -72,22 +74,24 @@ impl<'a> MessageScanner<'a> {
                         self.next_stage.process_event(ParseError);
                         ParseStateError
                     }
-                },
+                }
+            },
             _ => { self.buf.push(byte); ParseHeaderName }
         }
     }
 
     fn parse_header_value(&mut self, byte: u8) -> ParserState {
+        self.buf.push(byte);
         match byte {
-            b' ' if self.buf.len() == 0 => ParseHeaderValue,
             b'\r' => ParseEndOfHeader,
             b'\n' => ParseStartHeaderLine,
-            _ => { self.buf.push(byte); ParseHeaderValue  }
+            _ => ParseHeaderValue 
 
         }
     }
 
     fn parse_end_of_header(&mut self, byte: u8) -> ParserState {
+        self.buf.push(byte);
         match byte {
             b'\n' => ParseStartHeaderLine,
             _ => {
@@ -213,8 +217,8 @@ impl<'a> MessageScanner<'a> {
 #[test]
 fn parser_test() {
     let s = "Header1: Value1\r\nHeader2: Value2\r\n\r\nBody".to_string();
-    let expected_events = vec![HeaderName("Header1".to_string()), HeaderValue("Value1".to_string()), 
-               HeaderName("Header2".to_string()), HeaderValue("Value2".to_string()),
+    let expected_events = vec![HeaderName("Header1:".to_string()), HeaderValue(" Value1\r\n".to_string()), 
+               HeaderName("Header2:".to_string()), HeaderValue(" Value2\r\n".to_string()),
                EndOfHeaders, BodyChunk(vec![66, 111, 100, 121]),End];
 
     test_message_scanner(s, expected_events);
@@ -223,8 +227,8 @@ fn parser_test() {
 #[test]
 fn multiline_header_test() {
     let s = "Header1: Line1\r\n\t  Line2\r\n\r\nBody".to_string();
-    let expected_events = vec![HeaderName("Header1".to_string()), 
-        HeaderValue("Line1\t  Line2".to_string()), 
+    let expected_events = vec![HeaderName("Header1:".to_string()), 
+        HeaderValue(" Line1\r\n\t  Line2\r\n".to_string()), 
         EndOfHeaders,
         BodyChunk(vec![66, 111, 100, 121]),End];
 
@@ -233,7 +237,9 @@ fn multiline_header_test() {
 
 #[cfg(test)]
 fn test_message_scanner(msg: String, expected_events: Vec<MessageParserEvent>) {
-    use std::io::MemReader;
+    #![feature(io)]
+
+    use std::old_io::MemReader;
     use message_parser_sink::MessageParserSink;
     use reader_parser::ReaderParser;
 

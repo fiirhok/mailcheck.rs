@@ -18,8 +18,8 @@ impl<'a> MessageParserStage for HeaderDecoder<'a>
 {
     fn process_event(&mut self, event: MessageParserEvent) {
         match event {
-            Header(name, value) => {
-                self.next_stage.process_event(Header(name, value.from_rfc2047()))
+            Header(name, value, raw) => {
+                self.next_stage.process_event(Header(name, value.from_rfc2047(), raw))
             },
             _ => self.next_stage.process_event(event)
         }

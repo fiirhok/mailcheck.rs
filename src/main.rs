@@ -1,5 +1,11 @@
 #![cfg(not(test))]
 
+
+// not worried about using some unstable features here:
+#![feature(path)]
+#![feature(std_misc)]
+#![feature(io)]
+
 extern crate mailcheck;
 extern crate time;
 use mailcheck::MessageParserEvent;
@@ -36,7 +42,7 @@ fn process_dir(dir: &Path) {
         Ok(msgs) => {
             let start = time::precise_time_ns();
 
-            let mut events : Vec<Future<uint>> = msgs.iter().map(|msg| {
+            let mut events : Vec<Future<usize>> = msgs.iter().map(|msg| {
                 let path = msg.clone();
                 Future::spawn(move || { parse_msg(&path).iter().count() })
             }).collect();
@@ -74,6 +80,6 @@ fn main() {
     let dir = Path::new("/Users/smckay/projects/rust/mailcheck/msgs");
 
     //process_dir(&dir);
-    process_msg(dir, "msg1");
+    process_msg(dir, "msg2");
 }
 
