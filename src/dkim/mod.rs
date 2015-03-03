@@ -11,6 +11,7 @@ use self::rustc_serialize::base64::CharacterSet::Standard;
 use self::rustc_serialize::base64::Newline::CRLF;
 
 use self::DkimSignatureParseError::BadCanonicalization;
+use self::DkimSignatureParseError::MissingTag;
 
 use std::ops::Index;
 
@@ -49,7 +50,8 @@ impl BodyCanonicalizer for SimpleBodyCanonicalizer {
 
         output.push_all(input.as_slice());
 
-        while (*output.index(&(output.len() - 1)) == b'\n' &&
+        while (output.len() >= 2 &&
+               *output.index(&(output.len() - 1)) == b'\n' &&
                *output.index(&(output.len() - 2)) == b'\r') {
 
             output.pop();
@@ -182,7 +184,10 @@ impl DkimSignature {
             version:  try!(unwrap_uint_tag_value(&tags, "v")),
             hash_type: hash_type,
             signature: try!(unwrap_string_tag_value(&tags, "b")).replace(" ",""),
-            body_hash: try!(unwrap_string_tag_value(&tags, "bh")),
+            body_hash: match unwrap_string_tag_value(&tags, "bh") {
+                Ok(bh) => regex!(r"\s+").replace_all(bh.as_slice(), "").to_string(),
+                Err(e) => return Err(MissingTag("bh".to_string()))
+            },            
             sdid: try!(unwrap_string_tag_value(&tags, "d")),
             header_fields: try!(unwrap_string_tag_value(&tags, "h")).split(':').map(|x| x.to_string()).collect(),
             selector: try!(unwrap_string_tag_value(&tags, "s")),
