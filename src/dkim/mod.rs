@@ -14,6 +14,9 @@ use self::DkimSignatureParseError::BadCanonicalization;
 
 use std::ops::Index;
 
+use std::char;
+use std::io::Write;
+
 trait BodyCanonicalizer {
     fn canonicalize(&mut self, input: &Vec<u8>) -> Vec<u8>;
     fn flush(&mut self) -> Vec<u8>;
@@ -62,21 +65,72 @@ impl BodyCanonicalizer for SimpleBodyCanonicalizer {
     }
 }
 
-struct RelaxedBodyCanonicalizer;
+struct RelaxedBodyCanonicalizer {
+    pending_newlines: usize,
+    ws: bool
+}
 
 impl RelaxedBodyCanonicalizer {
     fn new() -> RelaxedBodyCanonicalizer {
-        RelaxedBodyCanonicalizer
+        RelaxedBodyCanonicalizer { pending_newlines: 0, ws: false }
     }
+
+    fn flush_newlines(&mut self, output: &mut Vec<u8>) {
+        for i in range(0, self.pending_newlines ) {
+            output.push(b'\r');
+            output.push(b'\n');
+        }
+        self.pending_newlines = 0;
+    }
+
 }
 
 impl BodyCanonicalizer for RelaxedBodyCanonicalizer {
     fn canonicalize(&mut self, input: &Vec<u8>) -> Vec<u8> {
-        vec![]
+        let mut output = vec![];
+
+        for i in input.iter() {
+            match char::from_u32(*i as u32) {
+                Some(c) => {
+                    if c == '\r' {
+                        // do nothing
+                    }
+                    else if c == '\n' {
+                        self.ws = false;
+                        self.pending_newlines = self.pending_newlines + 1;
+                    }
+                    else if self.ws {
+                        self.flush_newlines(&mut output);
+                        if !c.is_whitespace() {
+                            output.push(b' ');
+                            output.push(*i);
+                            self.ws = false;
+                        }
+                    }
+                    else {
+                        self.flush_newlines(&mut output);
+                        self.ws = c.is_whitespace();
+                        if !self.ws {
+                            output.push(*i);
+                        }
+                    }
+                }
+                None => {
+                    // an invalid character is techinically invalid, but we 
+                    // don't need to enforce that here:  just pass it through
+                    self.flush_newlines(&mut output);
+                    output.push(*i);
+                    self.ws = false;
+                }
+            }
+        }
+
+        output
     }
 
     fn flush(&mut self) -> Vec<u8> {
-        vec![]
+        self.pending_newlines = 0;
+        vec![b'\r', b'\n']
     }
 }
 
@@ -145,15 +199,16 @@ impl DkimSignature {
 }
 
 
-pub struct DkimVerifier<'a> {
+pub struct DkimVerifier {
     signature: DkimSignature,
     hasher: Hasher,
     body_canon: Box<BodyCanonicalizer + Send>,
     header_canon: Box<BodyCanonicalizer + Send>,
+    body_bytes_hashed: usize
 }
 
-impl<'a> DkimVerifier<'a> {
-    pub fn new(signature: DkimSignature) -> DkimVerifier<'a> {
+impl DkimVerifier {
+    pub fn new(signature: DkimSignature) -> DkimVerifier {
         let hash_type = signature.hash_type;
         let header_canon = signature.header_canon.clone();
         let body_canon = signature.body_canon.clone();
@@ -167,21 +222,46 @@ impl<'a> DkimVerifier<'a> {
             body_canon: match body_canon {
                 CanonicalizationType::Simple => Box::new(SimpleBodyCanonicalizer::new()),
                 CanonicalizationType::Relaxed => Box::new(RelaxedBodyCanonicalizer::new())
-            }
+            },
+            body_bytes_hashed: 0
         }
     }
 
+    fn limit_body_length(&mut self, data: &mut Vec<u8>) {
+        match self.signature.body_length {
+            Some(body_length) => data.truncate(body_length as usize - self.body_bytes_hashed),
+            None => ()
+        }
+        self.body_bytes_hashed = self.body_bytes_hashed + data.len();
+    }
+
     pub fn update_body(&mut self, data: &Vec<u8>) {
-        let canonicalized_data = self.body_canon.canonicalize(data);
-        self.hasher.write_all(canonicalized_data.as_slice()); 
+        use std::str::from_utf8;
+
+        let mut canonicalized_data = self.body_canon.canonicalize(data);
+        self.limit_body_length(&mut canonicalized_data);
+        self.hasher.write(canonicalized_data.as_slice()); 
     }
 
     pub fn finalize_body(mut self) {
-        self.hasher.write_all(self.body_canon.flush().as_slice());
+        let mut data = self.body_canon.flush();
+        self.limit_body_length(&mut data);
+        self.hasher.write(data.as_slice());
         let result = self.hasher.finish();
-        println!("bh(calc): {}", result.as_slice().to_base64(Config{
-            char_set: Standard, pad: true, newline: CRLF, line_length: None})); 
-        println!("bh(sent): {}", self.signature.body_hash);
+
+        let hash_string = result.as_slice().to_base64(Config{
+            char_set: Standard, pad: true, newline: CRLF, line_length: None}); 
+
+        if hash_string != self.signature.body_hash {
+            let hash_name = match self.signature.hash_type {
+                SHA256 => "sha-256",
+                SHA1 => "sha-1",
+                _ => "err"
+            };
+            println!("hash mismatch {}", hash_name);
+            println!("bh(calc): {}", hash_string);
+            println!("bh(sent): {}\n", self.signature.body_hash);
+        }
 
         // TODO: this should return a DkimResults object, so we can actually
         // check the results
@@ -310,9 +390,25 @@ fn test_simple_body_canonicalization() {
 
     let mut result = vec![];
 
-    result.push_all(canon.canonicalize(&*as_vec(b"Test\r\nTest\r\n\r\n")).as_slice());
-    result.push_all(canon.canonicalize(&*as_vec(b"\r\none last line\r\n\r\n")).as_slice());
+    result.push_all(canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")).as_slice());
+    result.push_all(canon.canonicalize(&*as_vec(b"\r\none  last  line\r\n\r\n")).as_slice());
     result.push_all(canon.flush().as_slice());
 
-    assert_eq!(b"Test\r\nTest\r\n\r\n\r\none last line\r\n", result.as_slice());
+    assert_eq!(b"Test\r\nTest \r\n\r\n\r\none  last  line\r\n", result.as_slice());
+}
+
+#[test]
+fn test_relaxed_body_canonicalization() {
+    use std::vec::as_vec;
+    use std::str::from_utf8;
+
+    let mut canon = RelaxedBodyCanonicalizer::new();
+
+    let mut result = vec![];
+
+    result.push_all(canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")).as_slice());
+    result.push_all(canon.canonicalize(&*as_vec(b"\r\none  last \t line\r\n\r\n")).as_slice());
+    result.push_all(canon.flush().as_slice());
+
+    assert_eq!("Test\r\nTest\r\n\r\n\r\none last line\r\n", from_utf8(result.as_slice()).unwrap());
 }

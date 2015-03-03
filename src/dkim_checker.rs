@@ -11,7 +11,7 @@ use dkim::DkimVerifier;
 
 pub struct DkimChecker<'a> {
     state: DkimState,
-    signatures: Vec<DkimVerifier<'a>>,
+    signatures: Vec<DkimVerifier>,
     next_stage: &'a mut (MessageParserStage + 'a)
 }
 
@@ -53,7 +53,7 @@ impl<'a> DkimChecker<'a> {
         let dkim_signature_header = String::from_str("DKIM-Signature");
         match event {
             Header(ref name, ref value, _) if *name == dkim_signature_header => {
-                println!("===>  DKIM-Signature: {}", value);
+                //println!("===>  DKIM-Signature: {}", value);
                 let signature = DkimSignature::parse(value.as_slice());
                 match signature {
                     Ok(s) => {

@@ -85,7 +85,7 @@ impl FromRFC2047 for str {
         let encoded_word_re = encoded_word_regex();
 
         let ws_removed = Regex::new(r"\?=\s*=\?").unwrap().replace_all(self, "?==?");
-        encoded_word_re.replace_all(ws_removed.as_slice(), |&: caps: &Captures| {
+        encoded_word_re.replace_all(ws_removed.as_slice(), |caps: &Captures| {
             match (caps.at(1), caps.at(2), caps.at(3)) {
                 (Some(charset), Some(encoding), Some(content)) => {
                     match decode_word(charset, encoding, content) {

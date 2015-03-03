@@ -44,7 +44,9 @@ fn process_dir(dir: &Path) {
 
             let mut events : Vec<Future<usize>> = msgs.iter().map(|msg| {
                 let path = msg.clone();
-                Future::spawn(move || { parse_msg(&path).iter().count() })
+                Future::spawn(move || { 
+                    parse_msg(&path).iter().count() 
+                })
             }).collect();
             let msg_count = events.len();
             let event_count = events.iter_mut().map(|e| e.get()).fold(0, |sum, x| sum + x);
@@ -79,7 +81,7 @@ fn process_msg(dir: Path, msg: &str) {
 fn main() {
     let dir = Path::new("/Users/smckay/projects/rust/mailcheck/msgs");
 
-    //process_dir(&dir);
-    process_msg(dir, "msg2");
+    process_dir(&dir);
+    //process_msg(dir, "msg10114");
 }
 
