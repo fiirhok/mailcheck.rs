@@ -23,7 +23,7 @@ fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
         Ok(file) => {
             let mut sink = MessageParserSink::new();
             {
-                let reader = BufReader::new(file);
+                let reader = file; //BufReader::new(file);
                 let mut header_decoder: HeaderDecoder= MessageParserFilter::new(&mut sink);
                 let mut dkim_checker: DkimChecker = MessageParserFilter::new(&mut header_decoder);
                 let mut header_parser: HeaderParser = MessageParserFilter::new(&mut dkim_checker);
@@ -71,10 +71,10 @@ fn process_dir(dir: &Path) {
         Ok(msgs) => {
             let start = time::precise_time_ns();
 
-            let mut events = process_msgs(msgs);
+            let mut events = process_msgs_mt(msgs);
 
             let msg_count = events.len();
-            let event_count = events.iter().fold(0, |sum, x| sum + *x);
+            let event_count = events.iter_mut().fold(0, |sum, x| sum + x.get());
             let end = time::precise_time_ns();
 
             let duration_s = (end - start) as f64 / 1000000000.0;
