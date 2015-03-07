@@ -1,55 +1,80 @@
 #![cfg(not(test))]
 
-
 // not worried about using some unstable features here:
 #![feature(path)]
 #![feature(std_misc)]
-#![feature(io)]
 
 extern crate mailcheck;
 extern crate time;
 use mailcheck::MessageParserEvent;
+use std::sync::Future;
+use std::fs;
+use std::path::{Path,PathBuf};
 
 fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
 {
-    use std::old_io::{BufferedReader, File};
+    use std::io::BufReader;
+    use std::fs::File;
     use mailcheck::MessageParserFilter;
     use mailcheck::{MessageScanner, HeaderParser, HeaderDecoder, DkimChecker};
     use mailcheck::{ReaderParser, MessageParserSink};
 
+    match File::open(path) {
+        Ok(file) => {
+            let mut sink = MessageParserSink::new();
+            {
+                let reader = BufReader::new(file);
+                let mut header_decoder: HeaderDecoder= MessageParserFilter::new(&mut sink);
+                let mut dkim_checker: DkimChecker = MessageParserFilter::new(&mut header_decoder);
+                let mut header_parser: HeaderParser = MessageParserFilter::new(&mut dkim_checker);
+                let mut message_scanner: MessageScanner = MessageParserFilter::new(&mut header_parser);
+                let mut rp = ReaderParser::new(&mut message_scanner, reader);
 
-    let file = File::open(path);
-
-    let mut sink = MessageParserSink::new();
-    {
-        let reader = BufferedReader::new(file);
-        let mut header_decoder: HeaderDecoder= MessageParserFilter::new(&mut sink);
-        let mut dkim_checker: DkimChecker = MessageParserFilter::new(&mut header_decoder);
-        let mut header_parser: HeaderParser = MessageParserFilter::new(&mut dkim_checker);
-        let mut message_scanner: MessageScanner = MessageParserFilter::new(&mut header_parser);
-        let mut rp = ReaderParser::new(&mut message_scanner, reader);
-
-        rp.read_to_end();
+                rp.read_to_end();
+            }
+            sink.events()
+        },
+        Err(_) => vec!()
     }
-    sink.events()
 }
 
-fn process_dir(dir: &Path) {
-    use std::sync::Future;
-    use std::old_io::fs;
 
-    match fs::readdir(dir) {
-        Ok(msgs) => {
-            let start = time::precise_time_ns();
-
-            let mut events : Vec<Future<usize>> = msgs.iter().map(|msg| {
-                let path = msg.clone();
+fn process_msgs_mt(msgs: fs::ReadDir) -> Vec<Future<usize>> {
+    msgs.map(|msg| {
+        match msg {
+            Ok(dir_entry) => {
+                let path = dir_entry.path();
                 Future::spawn(move || { 
                     parse_msg(&path).iter().count() 
                 })
-            }).collect();
+            }
+            Err(_) => panic!("Error processing  message")
+        }
+    }).collect()
+}
+
+fn process_msgs(msgs: fs::ReadDir) -> Vec<usize> {
+    msgs.map(|msg| {
+        match msg {
+            Ok(dir_entry) => {
+                let path = dir_entry.path();
+                parse_msg(&path).iter().count() 
+            }
+            Err(_) => panic!("Error processing  message")
+        }
+    }).collect()
+}
+
+fn process_dir(dir: &Path) {
+
+    match fs::read_dir(dir) {
+        Ok(msgs) => {
+            let start = time::precise_time_ns();
+
+            let mut events = process_msgs(msgs);
+
             let msg_count = events.len();
-            let event_count = events.iter_mut().map(|e| e.get()).fold(0, |sum, x| sum + x);
+            let event_count = events.iter().fold(0, |sum, x| sum + *x);
             let end = time::precise_time_ns();
 
             let duration_s = (end - start) as f64 / 1000000000.0;
@@ -66,7 +91,7 @@ fn process_dir(dir: &Path) {
     }
 }
 
-fn process_msg(dir: Path, msg: &str) {
+fn process_msg(dir: PathBuf, msg: &str) {
     let path = dir.join(Path::new(msg));
     let events = parse_msg(&path);
 
@@ -79,7 +104,7 @@ fn process_msg(dir: Path, msg: &str) {
 }
 
 fn main() {
-    let dir = Path::new("/Users/smckay/projects/rust/mailcheck/msgs");
+    let dir = PathBuf::new("/Users/smckay/projects/rust/mailcheck/msgs");
 
     process_dir(&dir);
     //process_msg(dir, "msg10114");
