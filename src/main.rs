@@ -13,7 +13,6 @@ use std::path::{Path,PathBuf};
 
 fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
 {
-    use std::io::BufReader;
     use std::fs::File;
     use mailcheck::MessageParserFilter;
     use mailcheck::{MessageScanner, HeaderParser, HeaderDecoder, DkimChecker};
@@ -23,7 +22,7 @@ fn parse_msg(path: &Path) -> Vec<MessageParserEvent>
         Ok(file) => {
             let mut sink = MessageParserSink::new();
             {
-                let reader = file; //BufReader::new(file);
+                let reader = file;
                 let mut header_decoder: HeaderDecoder= MessageParserFilter::new(&mut sink);
                 let mut dkim_checker: DkimChecker = MessageParserFilter::new(&mut header_decoder);
                 let mut header_parser: HeaderParser = MessageParserFilter::new(&mut dkim_checker);

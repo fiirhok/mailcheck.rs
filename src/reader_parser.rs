@@ -19,13 +19,14 @@ impl<'a, R: Read> ReaderParser<'a, R> {
     }
 
     pub fn read_to_end(&mut self) {
-        const BUF_SIZE: usize = 2048;
+        const BUF_SIZE: usize = 4 * 1024;
         let mut prev_char: u8 = b'\0';
         loop {
             let mut buf: [u8; BUF_SIZE] = [b'\0'; BUF_SIZE];
             match self.reader.read(&mut buf) {
                 Ok(0) => {
-                    self.next_stage.process_event(End)
+                    self.next_stage.process_event(End);
+                    break
                 },
                 Ok(n) => {
                     for i in 0..n {

@@ -239,14 +239,13 @@ fn multiline_header_test() {
 fn test_message_scanner(msg: String, expected_events: Vec<MessageParserEvent>) {
     #![feature(io)]
 
-    use std::old_io::MemReader;
     use message_parser_sink::MessageParserSink;
     use reader_parser::ReaderParser;
 
 
     let mut sink = MessageParserSink::new();
     {
-        let r = MemReader::new(msg.as_bytes().to_vec());
+        let r = msg.as_bytes();
         let mut parser: MessageScanner = MessageParserFilter::new(&mut sink);
         let mut rp = ReaderParser::new(&mut parser, r);
 

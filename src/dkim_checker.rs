@@ -119,7 +119,6 @@ Body".to_string();
 
 #[cfg(test)]
 fn test_message_parser(msg: String, expected_events: Vec<MessageParserEvent>) {
-    use std::old_io::MemReader;
     use message_parser_sink::MessageParserSink;
     use reader_parser::ReaderParser;
     use message_scanner::MessageScanner;
@@ -129,7 +128,7 @@ fn test_message_parser(msg: String, expected_events: Vec<MessageParserEvent>) {
 
     let mut sink = MessageParserSink::new();
     {
-        let r = MemReader::new(msg.as_bytes().to_vec());
+        let r = msg.as_bytes();
         let mut dkim: DkimChecker = MessageParserFilter::new(&mut sink);
         let mut parser: HeaderParser = MessageParserFilter::new(&mut dkim);
         let mut scanner: MessageScanner = MessageParserFilter::new(&mut parser);
