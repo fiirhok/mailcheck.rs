@@ -1,5 +1,8 @@
 use std::ops::Index;
 use std::char;
+use events::MessageParserEvent::Header;
+use events::MessageParserEvent;
+use std::ascii::OwnedAsciiExt;
 
 #[derive(Debug,Clone)]
 pub enum CanonicalizationType {
@@ -10,18 +13,27 @@ pub enum CanonicalizationType {
 pub struct Canonicalizer;
 
 impl Canonicalizer {
-    pub fn body(canon_type: CanonicalizationType) -> Box<BodyCanonicalizer + Send> {
+    pub fn body(canon_type: CanonicalizationType) -> Box<BodyCanonicalizer> {
         match canon_type {
             CanonicalizationType::Simple => Box::new(SimpleBodyCanonicalizer::new()),
             CanonicalizationType::Relaxed => Box::new(RelaxedBodyCanonicalizer::new())
         }
     }
+    pub fn head(canon_type: CanonicalizationType) -> Box<HeaderCanonicalizer> {
+        match canon_type {
+            CanonicalizationType::Simple => Box::new(SimpleHeaderCanonicalizer::new()),
+            CanonicalizationType::Relaxed => Box::new(RelaxedHeaderCanonicalizer::new())
+        }
+    }
 }
 
 pub trait BodyCanonicalizer {
-
     fn canonicalize(&mut self, input: &Vec<u8>) -> Vec<u8>;
     fn flush(&mut self) -> Vec<u8>;
+}
+
+pub trait HeaderCanonicalizer {
+    fn canonicalize(&mut self, name: String, value: String, raw: Vec<u8>) -> Vec<u8>;
 }
 
 struct SimpleBodyCanonicalizer {
@@ -45,9 +57,9 @@ impl BodyCanonicalizer for SimpleBodyCanonicalizer {
 
         output.push_all(input.as_slice());
 
-        while (output.len() >= 2 &&
+        while output.len() >= 2 &&
                *output.index(&(output.len() - 1)) == b'\n' &&
-               *output.index(&(output.len() - 2)) == b'\r') {
+               *output.index(&(output.len() - 2)) == b'\r' {
 
             output.pop();
             output.pop();
@@ -131,6 +143,54 @@ impl BodyCanonicalizer for RelaxedBodyCanonicalizer {
     }
 }
 
+struct SimpleHeaderCanonicalizer;
+
+impl SimpleHeaderCanonicalizer {
+    pub fn new() -> SimpleHeaderCanonicalizer {
+        SimpleHeaderCanonicalizer
+    }
+}
+
+impl HeaderCanonicalizer for SimpleHeaderCanonicalizer {
+    fn canonicalize(&mut self, _: String, _: String, raw: Vec<u8>) -> Vec<u8> {
+        raw.clone()
+    }
+}
+
+struct RelaxedHeaderCanonicalizer;
+
+impl RelaxedHeaderCanonicalizer {
+    pub fn new() -> RelaxedHeaderCanonicalizer {
+        RelaxedHeaderCanonicalizer
+    }
+}
+
+impl HeaderCanonicalizer for RelaxedHeaderCanonicalizer {
+    fn canonicalize(&mut self, name: String, value: String, _: Vec<u8> ) -> Vec<u8> {
+        let mut result = name.clone().into_ascii_lowercase().into_bytes();
+        result.push(b':');
+
+        let mut ws = false;
+        for b in value.as_bytes() {
+            let c = match( char::from_u32(*b as u32) ) {
+                Some(x) => x,
+                None => panic!("Could not decode character")
+            };
+            if c.is_whitespace() {
+                if !ws {
+                    ws = true;
+                    result.push(b' ');
+                }
+            }
+            else {
+                ws = false;
+                result.push(*b);
+            }
+        }
+        result.push_all(b"\r\n");
+        result
+    }
+}
 
 #[test]
 fn test_simple_body_canonicalization() {
@@ -161,4 +221,35 @@ fn test_relaxed_body_canonicalization() {
     result.push_all(canon.flush().as_slice());
 
     assert_eq!("Test\r\nTest\r\n\r\n\r\none last line\r\n", from_utf8(result.as_slice()).unwrap());
+}
+
+#[test]
+fn test_simple_header_canonicalization() {
+    use std::vec::as_vec;
+
+    let raw = b"Test-Header: Test-Value\r\n   test";
+    let name = "Test-Header".to_string();
+    let value = "Test-Value\r\n   test".to_string();
+
+    let mut canon = SimpleHeaderCanonicalizer::new();
+
+    let result = canon.canonicalize(name, value, as_vec(raw).clone());
+
+    assert_eq!(raw, result.as_slice());
+}
+
+#[test]
+fn test_relaxed_header_canonicalization() {
+    use std::vec::as_vec;
+    use std::str::from_utf8;
+
+    let raw = b"Test-Header: Test-Value\r\n   test";
+    let name = "Test-Header".to_string();
+    let value = "Test-Value\r\n   test".to_string();
+
+    let mut canon = RelaxedHeaderCanonicalizer::new();
+
+    let result = canon.canonicalize(name, value, as_vec(raw).clone());
+
+    assert_eq!(from_utf8(b"test-header:Test-Value test\r\n"), from_utf8(result.as_slice()));
 }

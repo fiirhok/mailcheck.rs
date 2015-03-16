@@ -1,7 +1,6 @@
 #![cfg(not(test))]
 
 // not worried about using some unstable features here:
-#![feature(path)]
 #![feature(std_misc)]
 
 extern crate mailcheck;
@@ -52,18 +51,7 @@ fn process_msgs_mt(msgs: fs::ReadDir) -> Vec<Future<usize>> {
     }).collect()
 }
 
-fn process_msgs(msgs: fs::ReadDir) -> Vec<usize> {
-    msgs.map(|msg| {
-        match msg {
-            Ok(dir_entry) => {
-                let path = dir_entry.path();
-                parse_msg(&path).iter().count() 
-            }
-            Err(_) => panic!("Error processing  message")
-        }
-    }).collect()
-}
-
+#[allow(dead_code)]
 fn process_dir(dir: &Path) {
 
     match fs::read_dir(dir) {
@@ -90,14 +78,18 @@ fn process_dir(dir: &Path) {
     }
 }
 
+#[allow(dead_code)]
 fn process_msg(dir: PathBuf, msg: &str) {
+    use mailcheck::MessageParserEvent::BodyChunk;
+
     let path = dir.join(Path::new(msg));
     let events = parse_msg(&path);
 
     for event in events.iter() {
         match event {
-            //e => println!("{:?}", e)
-            _ => ()
+            &BodyChunk(_) => (),
+            e => println!("{:?}", e)
+            //_ => ()
         }
     }
 }
@@ -105,7 +97,7 @@ fn process_msg(dir: PathBuf, msg: &str) {
 fn main() {
     let dir = PathBuf::new("/Users/smckay/projects/rust/mailcheck/msgs");
 
-    process_dir(&dir);
-    //process_msg(dir, "msg10114");
+    //process_dir(&dir);
+    process_msg(dir, "msg10114");
 }
 

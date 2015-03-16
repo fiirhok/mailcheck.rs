@@ -15,10 +15,9 @@ use self::rustc_serialize::base64::Newline::CRLF;
 use self::DkimSignatureParseError::BadCanonicalization;
 use self::DkimSignatureParseError::MissingTag;
 
-
 use std::io::Write;
 
-use self::canonicalizer::{CanonicalizationType, Canonicalizer, BodyCanonicalizer};
+use self::canonicalizer::{CanonicalizationType, Canonicalizer, BodyCanonicalizer, HeaderCanonicalizer};
 
 
 pub struct DkimSignature {
@@ -52,6 +51,11 @@ pub enum DkimSignatureParseError {
     BadHashAlgorithm(String),
 }
 
+#[derive(Debug)]
+pub enum DkimVerificationError {
+    HashError
+}
+
     
 impl DkimSignature {
     pub fn parse(signature: &str) -> Result<DkimSignature, DkimSignatureParseError> {
@@ -71,7 +75,7 @@ impl DkimSignature {
             signature: try!(unwrap_string_tag_value(&tags, "b")).replace(" ",""),
             body_hash: match unwrap_string_tag_value(&tags, "bh") {
                 Ok(bh) => regex!(r"\s+").replace_all(bh.as_slice(), "").to_string(),
-                Err(e) => return Err(MissingTag("bh".to_string()))
+                Err(_) => return Err(MissingTag("bh".to_string()))
             },            
             sdid: try!(unwrap_string_tag_value(&tags, "d")),
             header_fields: try!(unwrap_string_tag_value(&tags, "h")).split(':').map(|x| x.to_string()).collect(),
@@ -92,8 +96,8 @@ impl DkimSignature {
 pub struct DkimVerifier {
     signature: DkimSignature,
     hasher: Hasher,
-    body_canon: Box<BodyCanonicalizer + Send>,
-    header_canon: Box<BodyCanonicalizer + Send>,
+    body_canon: Box<BodyCanonicalizer>,
+    header_canon: Box<HeaderCanonicalizer>,
     body_bytes_hashed: usize
 }
 
@@ -105,7 +109,7 @@ impl DkimVerifier {
         DkimVerifier {
             signature: signature,
             hasher: Hasher::new(hash_type),
-            header_canon: Canonicalizer::body(header_canon),
+            header_canon: Canonicalizer::head(header_canon),
             body_canon: Canonicalizer::body(body_canon),
             body_bytes_hashed: 0
         }
@@ -119,18 +123,22 @@ impl DkimVerifier {
         self.body_bytes_hashed = self.body_bytes_hashed + data.len();
     }
 
-    pub fn update_body(&mut self, data: &Vec<u8>) {
-        use std::str::from_utf8;
-
+    pub fn update_body(&mut self, data: &Vec<u8>) -> Result<usize, DkimVerificationError> {
         let mut canonicalized_data = self.body_canon.canonicalize(data);
         self.limit_body_length(&mut canonicalized_data);
-        self.hasher.write(canonicalized_data.as_slice()); 
+        match self.hasher.write(canonicalized_data.as_slice()) {
+            Ok(len) => Ok(len),
+            Err(_) => Err(DkimVerificationError::HashError)
+        }
     }
 
-    pub fn finalize_body(mut self) {
+    pub fn finalize_body(mut self) -> Result<DkimResults, DkimVerificationError> {
         let mut data = self.body_canon.flush();
         self.limit_body_length(&mut data);
-        self.hasher.write(data.as_slice());
+        match self.hasher.write(data.as_slice()) {
+            Ok(_) => (),
+            Err(_) => return Err(DkimVerificationError::HashError)
+        }
         let result = self.hasher.finish();
 
         let hash_string = result.as_slice().to_base64(Config{
@@ -149,9 +157,12 @@ impl DkimVerifier {
 
         // TODO: this should return a DkimResults object, so we can actually
         // check the results
+
+        Ok(DkimResults)
     }
 }
 
+pub struct DkimResults;
 
 fn parse_dkim_signature(dkim_signature: &str) -> Result<HashMap<&str, &str>,DkimSignatureParseError> {
     let mut tags_map : HashMap<&str,&str> = HashMap::new();
