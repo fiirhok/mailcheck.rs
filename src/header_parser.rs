@@ -1,5 +1,8 @@
 use events::MessageParserEvent::{HeaderName, HeaderValue, Header, 
-    EndOfHeaders, ParseError, End};
+    EndOfHeaders, ParseError};
+#[cfg(test)]
+use events::MessageParserEvent::End;
+
 use events::{MessageParserStage, MessageParserFilter};
 use events::MessageParserEvent;
 
@@ -74,7 +77,7 @@ impl<'a> HeaderParser<'a> {
                 self.next_stage.process_event(event.clone());
                 {
                     let name = self.name.clone().expect("ERROR: Header value with no header name");
-                    let trimmed = value.as_slice().trim().trim_right_matches(':');
+                    let trimmed = &value.trim().trim_right_matches(':');
 
                     self.next_stage.process_event(Header(name, trimmed.to_string(), self.buf.clone()));
                     self.buf.clear();

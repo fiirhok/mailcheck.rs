@@ -1,8 +1,6 @@
 use std::ops::Index;
 use std::char;
-use events::MessageParserEvent::Header;
-use events::MessageParserEvent;
-use std::ascii::OwnedAsciiExt;
+use std::ascii::AsciiExt;
 
 #[derive(Debug,Clone)]
 pub enum CanonicalizationType {
@@ -49,17 +47,17 @@ impl SimpleBodyCanonicalizer {
 impl BodyCanonicalizer for SimpleBodyCanonicalizer {
     fn canonicalize(&mut self, input: &Vec<u8>) -> Vec<u8> {
         let mut output = vec![];
-        for i in range(0, self.pending_newlines ) {
+        for _ in (0 .. self.pending_newlines ) {
             output.push(b'\r');
             output.push(b'\n');
         }
         self.pending_newlines = 0;
 
-        output.push_all(input.as_slice());
+        output.push_all(&input);
 
         while output.len() >= 2 &&
-               *output.index(&(output.len() - 1)) == b'\n' &&
-               *output.index(&(output.len() - 2)) == b'\r' {
+               *output.index(output.len() - 1) == b'\n' &&
+               *output.index(output.len() - 2) == b'\r' {
 
             output.pop();
             output.pop();
@@ -85,7 +83,7 @@ impl RelaxedBodyCanonicalizer {
     }
 
     fn flush_newlines(&mut self, output: &mut Vec<u8>) {
-        for i in range(0, self.pending_newlines ) {
+        for _ in (0 .. self.pending_newlines ) {
             output.push(b'\r');
             output.push(b'\n');
         }
@@ -167,12 +165,12 @@ impl RelaxedHeaderCanonicalizer {
 
 impl HeaderCanonicalizer for RelaxedHeaderCanonicalizer {
     fn canonicalize(&mut self, name: String, value: String, _: Vec<u8> ) -> Vec<u8> {
-        let mut result = name.clone().into_ascii_lowercase().into_bytes();
+        let mut result = name.as_bytes().to_ascii_lowercase();
         result.push(b':');
 
         let mut ws = false;
         for b in value.as_bytes() {
-            let c = match( char::from_u32(*b as u32) ) {
+            let c = match char::from_u32(*b as u32) {
                 Some(x) => x,
                 None => panic!("Could not decode character")
             };
@@ -195,16 +193,17 @@ impl HeaderCanonicalizer for RelaxedHeaderCanonicalizer {
 #[test]
 fn test_simple_body_canonicalization() {
     use std::vec::as_vec;
+    use std::str::from_utf8;
 
     let mut canon = SimpleBodyCanonicalizer::new();
 
     let mut result = vec![];
 
-    result.push_all(canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")).as_slice());
-    result.push_all(canon.canonicalize(&*as_vec(b"\r\none  last  line\r\n\r\n")).as_slice());
-    result.push_all(canon.flush().as_slice());
+    result.append(&mut canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")));
+    result.append(&mut canon.canonicalize(&*as_vec(b"\r\none  last  line\r\n\r\n")));
+    result.append(&mut canon.flush());
 
-    assert_eq!(b"Test\r\nTest \r\n\r\n\r\none  last  line\r\n", result.as_slice());
+    assert_eq!("Test\r\nTest \r\n\r\n\r\none  last  line\r\n", from_utf8(&result).unwrap());
 }
 
 #[test]
@@ -216,11 +215,11 @@ fn test_relaxed_body_canonicalization() {
 
     let mut result = vec![];
 
-    result.push_all(canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")).as_slice());
-    result.push_all(canon.canonicalize(&*as_vec(b"\r\none  last \t line\r\n\r\n")).as_slice());
-    result.push_all(canon.flush().as_slice());
+    result.append(&mut canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")));
+    result.append(&mut canon.canonicalize(&*as_vec(b"\r\none  last \t line\r\n\r\n")));
+    result.append(&mut canon.flush());
 
-    assert_eq!("Test\r\nTest\r\n\r\n\r\none last line\r\n", from_utf8(result.as_slice()).unwrap());
+    assert_eq!("Test\r\nTest\r\n\r\n\r\none last line\r\n", from_utf8(&result).unwrap());
 }
 
 #[test]
@@ -235,7 +234,7 @@ fn test_simple_header_canonicalization() {
 
     let result = canon.canonicalize(name, value, as_vec(raw).clone());
 
-    assert_eq!(raw, result.as_slice());
+    assert_eq!(raw, &result);
 }
 
 #[test]
@@ -251,5 +250,5 @@ fn test_relaxed_header_canonicalization() {
 
     let result = canon.canonicalize(name, value, as_vec(raw).clone());
 
-    assert_eq!(from_utf8(b"test-header:Test-Value test\r\n"), from_utf8(result.as_slice()));
+    assert_eq!(from_utf8(b"test-header:Test-Value test\r\n"), from_utf8(&result));
 }

@@ -1,11 +1,10 @@
 extern crate regex;
-extern crate "rustc-serialize" as rustc_serialize;
+extern crate rustc_serialize;
 extern crate encoding;
 
 use self::regex::{Regex, Captures};
 use self::rustc_serialize::base64::FromBase64;
 use std::ascii::AsciiExt;
-use std::num::FromStrRadix;
 
 use self::encoding::label::encoding_from_whatwg_label;
 use self::encoding::DecoderTrap;
@@ -32,11 +31,12 @@ fn encoded_word_regex() -> Regex {
     let encoded_char = r"[^\? ]";
     let re_str = format!(r"=\?({}*)\?({}*)\?({}*)\?=",
         charset_char, encoding_char, encoded_char);
-    Regex::new(re_str.as_slice()).unwrap()
+    Regex::new(&re_str).unwrap()
 }
 
 fn decode_word(charset: &str, encoding: &str, content: &str) -> Result<String, FromRFC2047Error> {
-    let decoded_content = match encoding.to_ascii_lowercase().as_slice() {
+    let encoding: &str = &encoding.to_ascii_lowercase();
+    let decoded_content = match encoding {
         "q" => q_decode(content),
         "b" => b_decode(content),
         _ => Err(UnsupportedEncoding)
@@ -49,13 +49,13 @@ fn q_decode(content: &str) -> Result<Vec<u8>, FromRFC2047Error> {
     let mut result: Vec<u8> = Vec::new();
     let char_regex = Regex::new(r"(=[0-9a-fA-F]{2}|.)").unwrap();
     for (start,end) in char_regex.find_iter(content) {
-        match content.slice(start,end) {
+        match &content[start..end] {
             "_" => result.push(b' '),
             x if x.len() == 3 => {
-                let value: u8 = FromStrRadix::from_str_radix(x.slice(1,3), 16).unwrap();
+                let value: u8 = u8::from_str_radix(&x[1..3], 16).unwrap();
                 result.push(value);
             },
-            x => result.push_all(x.slice(0,1).as_bytes())
+            x => result.push_all(&x[0..1].as_bytes())
         }
     }
     Ok(result)
@@ -71,7 +71,7 @@ fn b_decode(content: &str) -> Result<Vec<u8>, FromRFC2047Error> {
 fn charset_decode(charset: &str, content: Vec<u8>) -> Result<String, FromRFC2047Error> {
     match encoding_from_whatwg_label(charset) {
         Some(encoding) => {
-            match encoding.decode(content.as_slice(), DecoderTrap::Replace) {
+            match encoding.decode(&content, DecoderTrap::Replace) {
                 Ok(decoded) => Ok(decoded),
                 Err(_) => Err(CharsetError)
             }
@@ -85,7 +85,7 @@ impl FromRFC2047 for str {
         let encoded_word_re = encoded_word_regex();
 
         let ws_removed = Regex::new(r"\?=\s*=\?").unwrap().replace_all(self, "?==?");
-        encoded_word_re.replace_all(ws_removed.as_slice(), |caps: &Captures| {
+        encoded_word_re.replace_all(&ws_removed, |caps: &Captures| {
             match (caps.at(1), caps.at(2), caps.at(3)) {
                 (Some(charset), Some(encoding), Some(content)) => {
                     match decode_word(charset, encoding, content) {

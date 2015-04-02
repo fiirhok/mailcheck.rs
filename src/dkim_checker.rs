@@ -54,7 +54,7 @@ impl<'a> DkimChecker<'a> {
         match event {
             Header(ref name, ref value, _) if *name == dkim_signature_header => {
                 //println!("===>  DKIM-Signature: {}", value);
-                let signature = DkimSignature::parse(value.as_slice());
+                let signature = DkimSignature::parse(&value);
                 match signature {
                     Ok(s) => {
                         self.signatures.push( DkimVerifier::new(s) );
@@ -71,9 +71,19 @@ impl<'a> DkimChecker<'a> {
             }
         }
     }
-
+  
+    // this function is not complete yet, eventually all results will 
+    // be used
+    #[allow(unused_must_use)]
     fn parse_message(&mut self, event: MessageParserEvent) -> DkimState {
         match event {
+            Header(ref name, ref value, ref raw) => {
+                for sig in self.signatures.iter_mut() {
+                    sig.add_header(name.clone(), value.clone(), raw.clone());
+                }
+                self.next_stage.process_event(event.clone());
+                self.state.clone()
+            }
             BodyChunk(ref data) => {
                 for sig in self.signatures.iter_mut() {
                     sig.update_body(data);
@@ -83,7 +93,7 @@ impl<'a> DkimChecker<'a> {
             }
             MessageParserEvent::End => {
                 loop {
-                    let signature = match self.signatures.pop() {
+                    match self.signatures.pop() {
                         Some( sig ) => {
                             sig.finalize_body();
                         }
@@ -103,8 +113,6 @@ impl<'a> DkimChecker<'a> {
 
 #[test]
 fn parser_test() {
-    use events::MessageParserEvent::BodyChunk;
-
     let s = r"
 Header1: Value1
 Header2: Value2

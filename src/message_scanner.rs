@@ -1,5 +1,4 @@
 use std::vec::Vec;
-use std::char::CharExt;
 
 
 use events::MessageParserEvent::{MessageByte,
@@ -131,7 +130,7 @@ impl<'a> MessageScanner<'a> {
                     }
                 }
             }
-            x if CharExt::is_whitespace(x as char) => {
+            x if (x as char).is_whitespace() => {
                 self.buf.push(x);
                 ParseHeaderValue
             },
@@ -237,8 +236,6 @@ fn multiline_header_test() {
 
 #[cfg(test)]
 fn test_message_scanner(msg: String, expected_events: Vec<MessageParserEvent>) {
-    #![feature(io)]
-
     use message_parser_sink::MessageParserSink;
     use reader_parser::ReaderParser;
 

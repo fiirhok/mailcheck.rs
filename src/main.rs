@@ -95,9 +95,10 @@ fn process_msg(dir: PathBuf, msg: &str) {
 }
 
 fn main() {
-    let dir = PathBuf::new("/Users/smckay/projects/rust/mailcheck/msgs");
+    let mut dir = PathBuf::new();
+    dir.push("/Users/smckay/projects/rust/mailcheck/msgs");
 
-    //process_dir(&dir);
-    process_msg(dir, "msg10114");
+    process_dir(&dir);
+    //process_msg(dir, "msg10114");
 }
 

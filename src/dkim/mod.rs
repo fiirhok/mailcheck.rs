@@ -1,5 +1,5 @@
 extern crate openssl;
-extern crate "rustc-serialize" as rustc_serialize;
+extern crate rustc_serialize;
 
 mod canonicalizer;
 
@@ -20,6 +20,9 @@ use std::io::Write;
 use self::canonicalizer::{CanonicalizationType, Canonicalizer, BodyCanonicalizer, HeaderCanonicalizer};
 
 
+// The DKIM implementation is not yet complete, so not all fields are used
+// Remove the #[allow(dead_code)] once the implementation is complete
+#[allow(dead_code)]
 pub struct DkimSignature {
     // REQUIRED:
     version: u32,
@@ -63,7 +66,7 @@ impl DkimSignature {
 
         let (header_canon, body_canon) = try!(parse_canonicalization(&tags));
 
-        let hash_type = match try!(unwrap_string_tag_value(&tags, "a")).as_slice() {
+        let hash_type = match &(try!(unwrap_string_tag_value(&tags, "a"))) as &str {
             "rsa-sha256" => SHA256,
             "rsa-sha1" => SHA1,
             a => return Err(DkimSignatureParseError::BadHashAlgorithm(a.to_string()))
@@ -74,7 +77,7 @@ impl DkimSignature {
             hash_type: hash_type,
             signature: try!(unwrap_string_tag_value(&tags, "b")).replace(" ",""),
             body_hash: match unwrap_string_tag_value(&tags, "bh") {
-                Ok(bh) => regex!(r"\s+").replace_all(bh.as_slice(), "").to_string(),
+                Ok(bh) => regex!(r"\s+").replace_all(&bh, "").to_string(),
                 Err(_) => return Err(MissingTag("bh".to_string()))
             },            
             sdid: try!(unwrap_string_tag_value(&tags, "d")),
@@ -98,7 +101,8 @@ pub struct DkimVerifier {
     hasher: Hasher,
     body_canon: Box<BodyCanonicalizer>,
     header_canon: Box<HeaderCanonicalizer>,
-    body_bytes_hashed: usize
+    body_bytes_hashed: usize,
+    canonicalized_headers: Vec<u8>
 }
 
 impl DkimVerifier {
@@ -111,8 +115,15 @@ impl DkimVerifier {
             hasher: Hasher::new(hash_type),
             header_canon: Canonicalizer::head(header_canon),
             body_canon: Canonicalizer::body(body_canon),
-            body_bytes_hashed: 0
+            body_bytes_hashed: 0,
+            canonicalized_headers: vec![]
         }
+    }
+
+    pub fn add_header(&mut self, name: String, value: String, raw: Vec<u8>) {
+
+        let mut canonicalized_header = self.header_canon.canonicalize(name, value, raw);
+        self.canonicalized_headers.append(&mut canonicalized_header);
     }
 
     fn limit_body_length(&mut self, data: &mut Vec<u8>) {
@@ -126,7 +137,7 @@ impl DkimVerifier {
     pub fn update_body(&mut self, data: &Vec<u8>) -> Result<usize, DkimVerificationError> {
         let mut canonicalized_data = self.body_canon.canonicalize(data);
         self.limit_body_length(&mut canonicalized_data);
-        match self.hasher.write(canonicalized_data.as_slice()) {
+        match self.hasher.write(&canonicalized_data) {
             Ok(len) => Ok(len),
             Err(_) => Err(DkimVerificationError::HashError)
         }
@@ -135,13 +146,13 @@ impl DkimVerifier {
     pub fn finalize_body(mut self) -> Result<DkimResults, DkimVerificationError> {
         let mut data = self.body_canon.flush();
         self.limit_body_length(&mut data);
-        match self.hasher.write(data.as_slice()) {
+        match self.hasher.write(&data) {
             Ok(_) => (),
             Err(_) => return Err(DkimVerificationError::HashError)
         }
         let result = self.hasher.finish();
 
-        let hash_string = result.as_slice().to_base64(Config{
+        let hash_string = (&result).to_base64(Config{
             char_set: Standard, pad: true, newline: CRLF, line_length: None}); 
 
         if hash_string != self.signature.body_hash {
@@ -180,7 +191,7 @@ fn parse_dkim_tag(tag: &str) -> Result<(&str, &str),DkimSignatureParseError> {
     use self::DkimSignatureParseError::BadTag;
 
     let split_tag: Vec<&str> = tag.splitn(1, '=').collect();
-    match split_tag.as_slice() {
+    match &split_tag as &[&str] {
         [name, value] => Ok((name, value)),
         _ => Err(BadTag(tag.to_string()))
     }
@@ -228,7 +239,7 @@ fn parse_canonicalization(tags: &HashMap<&str,&str>)
             Ok((header_canon, body_canon))
         },
         Some(c) => {
-            match c_regex.captures(c.as_slice()) {
+            match c_regex.captures(&c) {
                 Some(groups) => match (groups.at(1), groups.at(2)) {
                     (Some(header), Some(body)) => 
                         Ok((try!(map_canon(header)), try!(map_canon(body)))),
