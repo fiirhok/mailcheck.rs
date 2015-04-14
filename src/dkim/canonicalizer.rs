@@ -53,7 +53,7 @@ impl BodyCanonicalizer for SimpleBodyCanonicalizer {
         }
         self.pending_newlines = 0;
 
-        output.push_all(&input);
+        output = output + input;
 
         while output.len() >= 2 &&
                *output.index(output.len() - 1) == b'\n' &&
@@ -185,46 +185,43 @@ impl HeaderCanonicalizer for RelaxedHeaderCanonicalizer {
                 result.push(*b);
             }
         }
-        result.push_all(b"\r\n");
-        result
+        result + b"\r\n"
     }
 }
 
 #[test]
 fn test_simple_body_canonicalization() {
-    use std::vec::as_vec;
     use std::str::from_utf8;
 
     let mut canon = SimpleBodyCanonicalizer::new();
 
     let mut result = vec![];
 
-    result.append(&mut canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")));
-    result.append(&mut canon.canonicalize(&*as_vec(b"\r\none  last  line\r\n\r\n")));
-    result.append(&mut canon.flush());
+    result.extend(canon.canonicalize(&(Vec::new() + b"Test\r\nTest \r\n\r\n")));
+    result.extend(canon.canonicalize(&(Vec::new() + b"\r\none  last  line\r\n\r\n")));
+    result.extend(canon.flush());
 
     assert_eq!("Test\r\nTest \r\n\r\n\r\none  last  line\r\n", from_utf8(&result).unwrap());
 }
 
 #[test]
 fn test_relaxed_body_canonicalization() {
-    use std::vec::as_vec;
     use std::str::from_utf8;
 
     let mut canon = RelaxedBodyCanonicalizer::new();
 
-    let mut result = vec![];
+    let mut result : Vec<u8> = vec![];
 
-    result.append(&mut canon.canonicalize(&*as_vec(b"Test\r\nTest \r\n\r\n")));
-    result.append(&mut canon.canonicalize(&*as_vec(b"\r\none  last \t line\r\n\r\n")));
-    result.append(&mut canon.flush());
+    result.extend(canon.canonicalize(&(Vec::new() + b"Test\r\nTest \r\n\r\n")));
+    result.extend(canon.canonicalize(&(Vec::new() + b"\r\none  last \t line\r\n\r\n")));
+    result.extend(canon.flush());
 
-    assert_eq!("Test\r\nTest\r\n\r\n\r\none last line\r\n", from_utf8(&result).unwrap());
+    assert_eq!("Test\r\nTest\r\n\r\n\r\none last line\r\n", from_utf8(&result[..]).unwrap());
 }
 
 #[test]
 fn test_simple_header_canonicalization() {
-    use std::vec::as_vec;
+    use std::str::from_utf8;
 
     let raw = b"Test-Header: Test-Value\r\n   test";
     let name = "Test-Header".to_string();
@@ -232,14 +229,13 @@ fn test_simple_header_canonicalization() {
 
     let mut canon = SimpleHeaderCanonicalizer::new();
 
-    let result = canon.canonicalize(name, value, as_vec(raw).clone());
+    let result = canon.canonicalize(name, value, Vec::new() + raw);
 
-    assert_eq!(raw, &result);
+    assert_eq!(from_utf8(raw), from_utf8(&result));
 }
 
 #[test]
 fn test_relaxed_header_canonicalization() {
-    use std::vec::as_vec;
     use std::str::from_utf8;
 
     let raw = b"Test-Header: Test-Value\r\n   test";
@@ -248,7 +244,7 @@ fn test_relaxed_header_canonicalization() {
 
     let mut canon = RelaxedHeaderCanonicalizer::new();
 
-    let result = canon.canonicalize(name, value, as_vec(raw).clone());
+    let result = canon.canonicalize(name, value, Vec::new() + raw);
 
     assert_eq!(from_utf8(b"test-header:Test-Value test\r\n"), from_utf8(&result));
 }

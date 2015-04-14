@@ -1,9 +1,3 @@
-#![feature(collections)]
-#![feature(slice_patterns)]
-
-#![feature(plugin)]
-#![plugin(regex_macros)] 
-
 extern crate regex;
 
 pub use self::events::{MessageParserEvent, MessageParserStage, MessageParserFilter};

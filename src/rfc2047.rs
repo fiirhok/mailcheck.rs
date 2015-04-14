@@ -55,7 +55,9 @@ fn q_decode(content: &str) -> Result<Vec<u8>, FromRFC2047Error> {
                 let value: u8 = u8::from_str_radix(&x[1..3], 16).unwrap();
                 result.push(value);
             },
-            x => result.push_all(&x[0..1].as_bytes())
+            x => {
+                result.extend(x[0..1].bytes());
+            }
         }
     }
     Ok(result)

@@ -4,6 +4,9 @@ extern crate rustc_serialize;
 mod canonicalizer;
 
 use std::collections::HashMap;
+
+use regex::Regex;
+
 use self::openssl::crypto::hash::Hasher;
 use self::openssl::crypto::hash::Type;
 use self::openssl::crypto::hash::Type::{SHA256,SHA1};
@@ -77,7 +80,7 @@ impl DkimSignature {
             hash_type: hash_type,
             signature: try!(unwrap_string_tag_value(&tags, "b")).replace(" ",""),
             body_hash: match unwrap_string_tag_value(&tags, "bh") {
-                Ok(bh) => regex!(r"\s+").replace_all(&bh, "").to_string(),
+                Ok(bh) => Regex::new(r"\s+").unwrap().replace_all(&bh, "").to_string(),
                 Err(_) => return Err(MissingTag("bh".to_string()))
             },            
             sdid: try!(unwrap_string_tag_value(&tags, "d")),
@@ -122,8 +125,8 @@ impl DkimVerifier {
 
     pub fn add_header(&mut self, name: String, value: String, raw: Vec<u8>) {
 
-        let mut canonicalized_header = self.header_canon.canonicalize(name, value, raw);
-        self.canonicalized_headers.append(&mut canonicalized_header);
+        let canonicalized_header = self.header_canon.canonicalize(name, value, raw);
+        self.canonicalized_headers.extend(canonicalized_header);
     }
 
     fn limit_body_length(&mut self, data: &mut Vec<u8>) {
@@ -190,9 +193,9 @@ fn parse_dkim_signature(dkim_signature: &str) -> Result<HashMap<&str, &str>,Dkim
 fn parse_dkim_tag(tag: &str) -> Result<(&str, &str),DkimSignatureParseError> {
     use self::DkimSignatureParseError::BadTag;
 
-    let split_tag: Vec<&str> = tag.splitn(1, '=').collect();
-    match &split_tag as &[&str] {
-        [name, value] => Ok((name, value)),
+    let mut split_tag = tag.splitn(1, '=');
+    match (split_tag.nth(0), split_tag.nth(1)) {
+        (Some(name), Some(value)) => Ok((name, value)),
         _ => Err(BadTag(tag.to_string()))
     }
 }
@@ -230,7 +233,7 @@ fn map_canon(s: &str) -> Result<CanonicalizationType, DkimSignatureParseError> {
 fn parse_canonicalization(tags: &HashMap<&str,&str>) 
     -> Result<(CanonicalizationType, CanonicalizationType), DkimSignatureParseError> {
 
-    let c_regex = regex!(r"(simple|relaxed)(?:/(simple|relaxed))?");
+    let c_regex = Regex::new(r"(simple|relaxed)(?:/(simple|relaxed))?").unwrap();
 
     match unwrap_string_tag_value(tags, "c").ok() {
         None => {

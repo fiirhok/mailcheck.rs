@@ -50,7 +50,7 @@ impl<'a> MessageParserFilter<'a> for DkimChecker<'a> {
 
 impl<'a> DkimChecker<'a> {
     fn parse_dkim_headers(&mut self, event: MessageParserEvent) -> DkimState {
-        let dkim_signature_header = String::from_str("DKIM-Signature");
+        let dkim_signature_header = "DKIM-Signature".to_string();
         match event {
             Header(ref name, ref value, _) if *name == dkim_signature_header => {
                 //println!("===>  DKIM-Signature: {}", value);

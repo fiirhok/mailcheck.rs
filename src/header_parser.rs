@@ -51,7 +51,7 @@ impl<'a> HeaderParser<'a> {
         match event {
             HeaderName(ref name) => {
                 self.next_stage.process_event(event.clone());
-                self.buf.push_all(name.as_bytes());
+                self.buf.extend(name.bytes());
                 let mut trimmed = name.clone();
                 // TODO: check to make sure header name ends with ':'
                 // but this should always be the case
@@ -73,7 +73,7 @@ impl<'a> HeaderParser<'a> {
     fn parse_header_value(&mut self, event: MessageParserEvent) -> ParserState {
         match event {
             HeaderValue(ref value) =>  {
-                self.buf.push_all(value.as_bytes());
+                self.buf.extend(value.bytes());
                 self.next_stage.process_event(event.clone());
                 {
                     let name = self.name.clone().expect("ERROR: Header value with no header name");
